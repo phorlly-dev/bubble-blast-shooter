@@ -1,24 +1,13 @@
 import { emitEvent } from "../../hooks/remote";
-import { COLS, RADIUS, ROWS } from "../consts";
-import {
-    getAimAngle,
-    getBetween,
-    getEmptyNeighborPositions,
-    getGridCol,
-    getLinear,
-} from "./helper";
-import {
-    afterShot,
-    animateHitShockwave,
-    endScreen,
-    findMatches,
-    handleMatches,
-} from "./payload";
+import { COLS, GameRegistry, HEIGHT, RADIUS, ROWS } from "../consts";
+import { getAimAngle, getBetween, getGridCol, getLinear } from "./helper";
+import { afterShot, endScreen, findMatches, handleMatches } from "./payload";
 import { colToX, hSpacing, markConnected, missedShot, rowToY } from "./state";
 
 const Controllers = {
-    traceBubblePath(scene, x1, y1, x2, y2) {
-        const steps = Math.ceil(getBetween(x1, y1, x2, y2) / (RADIUS * 0.6));
+    traceBubblePath(x1, y1, x2, y2) {
+        const { scene } = GameRegistry;
+        const steps = Math.ceil(getBetween(x1, y1, x2, y2) / (RADIUS * 0.5));
         let closest = null,
             bestDist = Infinity;
 
@@ -32,7 +21,7 @@ const Controllers = {
                     const b = scene.bubbles[r][c];
                     if (!b) continue;
                     const d = getBetween(px, py, b.x, b.y);
-                    if (d <= RADIUS * 1.8) {
+                    if (d <= RADIUS * 1.55) {
                         const distFromStart = getBetween(x1, y1, b.x, b.y);
                         if (distFromStart < bestDist) {
                             bestDist = distFromStart;
@@ -45,7 +34,8 @@ const Controllers = {
 
         return closest;
     },
-    snapToCeiling(scene, bubble) {
+    snapToCeiling(bubble) {
+        const { scene } = GameRegistry;
         if (bubble.body) {
             scene.physics.world.remove(bubble.body);
             bubble.body = null;
@@ -70,11 +60,12 @@ const Controllers = {
             ease: "Back.easeOut",
         });
 
-        const matches = findMatches(scene, bubble);
-        if (matches.length >= 3) handleMatches(scene, matches);
-        afterShot(scene);
+        const matches = findMatches(bubble);
+        if (matches.length >= 3) handleMatches(matches);
+        afterShot();
     },
-    drawAimLine(scene, pointer) {
+    drawAimLine(pointer) {
+        const { scene } = GameRegistry;
         scene.aimLine.clear();
         if (!scene.currentBubble || !scene.mouseOver) return;
 
@@ -85,7 +76,7 @@ const Controllers = {
         const sy = scene.currentBubble.y;
 
         // Calculate current angle to pointer
-        const rawAngle = getAimAngle(scene, pointer);
+        const rawAngle = getAimAngle(pointer);
 
         // Smoothly rotate laser toward pointer (optional, feel)
         if (scene.lastAimAngle == null) scene.lastAimAngle = rawAngle;
@@ -149,7 +140,8 @@ const Controllers = {
             y = ny;
         }
     },
-    shootBubble(scene, _pointer) {
+    shootBubble(_pointer) {
+        const { scene } = GameRegistry;
         if (!scene.currentBubble || scene.isShooting || scene.isSnapping)
             return;
         scene.isShooting = true;
@@ -161,7 +153,8 @@ const Controllers = {
         shot.vx = aim.x * speed;
         shot.vy = aim.y * speed;
     },
-    snapBubbleToClosest(scene, bubble) {
+    snapBubbleToClosest(bubble) {
+        const { scene } = GameRegistry;
         let empties = [];
         for (let r = 0; r < ROWS; r++) {
             const maxCol = r % 2 === 0 ? COLS : COLS - 1;
@@ -177,7 +170,7 @@ const Controllers = {
         }
 
         if (empties.length === 0) {
-            missedShot(scene);
+            missedShot();
             return;
         }
 
@@ -190,9 +183,10 @@ const Controllers = {
                 closest = spot;
             }
         }
-        snapBubbleToGrid(scene, bubble, closest.row, closest.col);
+        snapBubbleToGrid(bubble, closest.row, closest.col);
     },
-    snapBubbleToGrid(scene, bubble, row, col) {
+    snapBubbleToGrid(bubble, row, col) {
+        const { scene } = GameRegistry;
         if (bubble.body) {
             scene.physics.world.remove(bubble.body);
             bubble.body = null;
@@ -212,29 +206,34 @@ const Controllers = {
         scene.bubbleGroup.add(bubble);
 
         // match check
-        const matches = findMatches(scene, bubble);
+        const matches = findMatches(bubble);
         if (matches.length >= 3) {
-            handleMatches(scene, matches);
+            scene.sound.play("right");
+            handleMatches(matches);
+        } else {
+            scene.sound.play("wrong");
         }
 
         // delay floater check
         scene.time.delayedCall(220, () => {
             const removed = removeFloatingBubbles();
             if (removed > 0) {
+                scene.sound.play("fall");
                 scene.score += removed * 5;
                 emitEvent("score", scene.score);
             }
-            afterShot(scene);
+            afterShot();
             scene.isSnapping = false;
         });
     },
-    removeFloatingBubbles(scene) {
+    removeFloatingBubbles() {
+        const { scene } = GameRegistry;
         const connected = new Set();
 
         // Step 1: Mark all bubbles touching the ceiling
         for (let c = 0; c < COLS; c++) {
             const b = scene.bubbles[0]?.[c];
-            if (b) markConnected(scene, b, connected);
+            if (b) markConnected(b, connected);
         }
 
         let removed = 0;
@@ -269,7 +268,8 @@ const Controllers = {
 
         return removed;
     },
-    checkGameOver(scene) {
+    checkGameOver() {
+        const { scene } = GameRegistry;
         if (scene.gameOver) return;
 
         let hasBubble = false;
@@ -284,9 +284,11 @@ const Controllers = {
         }
 
         if (!hasBubble) {
-            endScreen(scene, true); // Win condition
+            scene.sound.play("win");
+            endScreen(true); // Win condition
         } else if (scene.shotsLeft <= 0) {
-            endScreen(scene, false); // Lose condition
+            scene.sound.play("lose");
+            endScreen(false); // Lose condition
         }
     },
 };

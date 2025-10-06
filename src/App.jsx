@@ -12,7 +12,7 @@ const App = () => {
     React.useEffect(() => {
         const savedName = localStorage.getItem("player");
         if (savedName) setPlayer(savedName);
-        setLoading(false);
+        setLoading(true);
         setShowBanner(true);
     }, []);
 

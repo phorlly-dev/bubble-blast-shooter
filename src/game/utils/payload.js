@@ -1,7 +1,8 @@
 import { emitEvent, onEvent } from "../../hooks/remote";
-import { HEIGHT, RADIUS, ROWS, WIDTH } from "../consts";
+import { GameRegistry, HEIGHT, RADIUS, ROWS, WIDTH } from "../consts";
 import MyText from "../objects/MyText";
 import {
+    checkGameOver,
     drawAimLine,
     shootBubble,
     snapBubbleToClosest,
@@ -9,16 +10,19 @@ import {
 } from "./controller";
 import {
     getBetween,
+    getCenterX,
+    getCenterY,
     getClamp,
     getEmptyNeighborPositions,
     getNeighbors,
     updateShotsBadge,
 } from "./helper";
 import { makeNextBall } from "./object";
-import { levelCompleted, textPopup } from "./state";
+import { colToX, levelCompleted, rowToY, textPopup } from "./state";
 
 const Payloads = {
-    swapBubbles(scene) {
+    swapBubbles() {
+        const { scene } = GameRegistry;
         if (scene.isShooting || scene.isSnapping) return;
 
         // swap positions visually
@@ -57,9 +61,9 @@ const Payloads = {
             ease: "Back.easeOut",
         });
 
-        // scene.sound.play("switch"); // optional sound
+        scene.sound.play("click");
     },
-    findMatches(scene, seed) {
+    findMatches(seed) {
         const color = seed.colorObj.name;
         const seen = new Set(),
             stack = [seed],
@@ -71,7 +75,7 @@ const Payloads = {
             if (seen.has(key)) continue;
             seen.add(key);
             out.push(cur);
-            for (const n of getNeighbors(scene, cur.row, cur.col)) {
+            for (const n of getNeighbors(cur.row, cur.col)) {
                 if (
                     n.bubble &&
                     n.bubble.colorObj.name === color &&
@@ -83,7 +87,8 @@ const Payloads = {
 
         return out;
     },
-    setupInput(scene) {
+    setupInput() {
+        const { scene } = GameRegistry;
         // NEW: Mouse over/out events for aim line visibility
         scene.input.on("gameover", () => {
             scene.mouseOver = true;
@@ -113,27 +118,28 @@ const Payloads = {
 
             // if click near either bubble, swap instead of shoot
             if (swapDist < RADIUS * 1.2 || currentDist < RADIUS * 1.2) {
-                swapBubbles(scene);
+                swapBubbles();
                 return;
             }
 
             // otherwise shoot
-            shootBubble(scene, p);
+            shootBubble(p);
         });
 
         scene.input.on("pointermove", (p) => {
-            if (!scene.gameOver && !scene.isShooting) drawAimLine(scene, p);
+            if (!scene.gameOver && !scene.isShooting) drawAimLine(p);
         });
 
-        onEvent("sound", (mute) => {
+        onEvent("sound:toggle", (mute) => {
             scene.sound.mute = mute;
             scene.sound.play("click");
         });
     },
-    spawnWaveEffect(scene) {
+    spawnWaveEffect() {
+        const { scene } = GameRegistry;
         const wave = scene.add.rectangle(
-            WIDTH / 2,
-            HEIGHT / 2,
+            getCenterX(),
+            getCenterY(),
             WIDTH,
             HEIGHT,
             0xffffff,
@@ -147,7 +153,8 @@ const Payloads = {
             onComplete: () => wave.destroy(),
         });
     },
-    animateHitShockwave(scene, bubble) {
+    animateHitShockwave(bubble) {
+        const { scene } = GameRegistry;
         const maxDist = RADIUS * 4.5; // effect radius
 
         for (let r = 0; r < ROWS; r++) {
@@ -171,20 +178,15 @@ const Payloads = {
                     ease: "Sine.easeOut",
                     yoyo: true,
                     onComplete: () => {
-                        b.setPosition(
-                            scene.colToX(b.col, b.row),
-                            scene.rowToY(b.row)
-                        );
+                        b.setPosition(colToX(b.col, b.row), rowToY(b.row));
                         b.setScale(1);
                     },
                 });
             }
         }
-
-        // Play subtle impact sound
-        // scene.sound.play("impact", { volume: 0.4 });
     },
-    handleTrueHit(scene, shot, hit) {
+    handleTrueHit(shot, hit) {
+        const { scene } = GameRegistry;
         if (scene.isSnapping) return;
         scene.isSnapping = true;
 
@@ -211,11 +213,7 @@ const Payloads = {
             ease: "Back",
             onComplete: () => {
                 // find nearest grid cell
-                const neighbors = getEmptyNeighborPositions(
-                    scene,
-                    hit.row,
-                    hit.col
-                );
+                const neighbors = getEmptyNeighborPositions(hit.row, hit.col);
                 let best = neighbors[0];
                 let minDist = Infinity;
                 for (const n of neighbors) {
@@ -226,20 +224,22 @@ const Payloads = {
                     }
                 }
 
-                if (best) snapBubbleToGrid(scene, shot, best.row, best.col);
-                else snapBubbleToClosest(scene, shot);
+                if (best) snapBubbleToGrid(shot, best.row, best.col);
+                else snapBubbleToClosest(shot);
 
-                animateHitShockwave(scene, shot);
+                animateHitShockwave(shot);
                 scene.isSnapping = false;
                 scene.isShooting = false;
             },
         });
     },
-    handleMatches(scene, matches) {
+    handleMatches(matches) {
+        const { scene } = GameRegistry;
         if (matches.length > 3) {
+            scene.sound.play("splash");
             const flash = scene.add.rectangle(
-                WIDTH / 2,
-                HEIGHT / 2,
+                getCenterX(),
+                getCenterY(),
                 WIDTH,
                 HEIGHT,
                 0xffffff,
@@ -255,9 +255,9 @@ const Payloads = {
 
         const combo = Math.max(1, matches.length - 2); // 3-match = 1x, 4-match = 2x, etc.
         matches.forEach((b) => {
-            const colorScore = Math.floor(b.colorObj.score / 5) * combo;
+            const colorScore = Math.floor(b.colorObj.score / 2) * combo;
 
-            textPopup(scene, b, colorScore);
+            textPopup(b, colorScore);
             scene.score += colorScore;
 
             scene.bubbles[b.row][b.col] = null;
@@ -266,28 +266,30 @@ const Payloads = {
 
         emitEvent("score", scene.score);
     },
-    afterShot(scene) {
+    afterShot() {
+        const { scene } = GameRegistry;
         if (scene.gameOver) return;
         scene.shotsLeft -= 1;
-        updateShotsBadge(scene);
+        updateShotsBadge();
 
         // Check for win/loss conditions
-        scene.checkGameOver();
+        checkGameOver();
         scene.isShooting = false;
         scene.isSnapping = false;
         if (scene.gameOver) return;
 
         scene.currentBubble = scene.nextBubble;
         scene.currentBubble.setPosition(scene.shooter.x, scene.shooter.y);
-        makeNextBall(scene);
+        makeNextBall();
     },
-    endScreen(scene, hasWon) {
+    endScreen(hasWon) {
+        const { scene } = GameRegistry;
         if (scene.gameOver) return;
         scene.aimLine.clear();
         scene.gameOver = true;
 
         if (hasWon) {
-            levelCompleted(scene, scene.level);
+            levelCompleted(scene.level);
 
             // You can add a "You Win!" text here if you like
             scene.time.delayedCall(2000, () => {
@@ -305,8 +307,8 @@ const Payloads = {
         } else {
             const title = new MyText(
                 scene,
-                WIDTH / 2,
-                HEIGHT / 2 - 22,
+                getCenterX(),
+                getCenterY() - 22,
                 "GAME OVER!",
                 {
                     fontSize: "40px",
@@ -318,8 +320,8 @@ const Payloads = {
             );
             const label = new MyText(
                 scene,
-                WIDTH / 2,
-                HEIGHT / 2 + 64,
+                getCenterX(),
+                getCenterY() + 64,
                 "Click to Replay",
                 {
                     fontSize: "16px",

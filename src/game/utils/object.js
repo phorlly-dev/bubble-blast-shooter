@@ -1,6 +1,7 @@
 import {
     COLORS,
     COLS,
+    GameRegistry,
     HEIGHT,
     OFFSET_X,
     OFFSET_Y,
@@ -11,11 +12,12 @@ import {
 import MyImage from "../objects/MyImage";
 import MySprite from "../objects/MySprite";
 import MyText from "../objects/MyText";
-import { getRandom, getRandomColor } from "./helper";
+import { getCenterX, getRandom, getRandomColor } from "./helper";
 import { colToX, hSpacing, rowToY } from "./state";
 
 const Objects = {
-    makeWalls(scene) {
+    makeWalls() {
+        const { scene } = GameRegistry;
         scene.wallLeft = OFFSET_X - RADIUS;
         scene.wallRight = OFFSET_X + (COLS - 1) * hSpacing() + RADIUS;
         scene.wallTop = OFFSET_Y;
@@ -30,14 +32,19 @@ const Objects = {
             false
         );
     },
-    makeCurrentBall(scene) {
-        const shooterX = WIDTH / 2;
+    makeCurrentBall() {
+        const { scene } = GameRegistry;
+        const shooterX = getCenterX();
         const shooterY = HEIGHT - hSpacing();
 
         // dark shooter base
-        scene.shooter = scene.add
-            .circle(shooterX, shooterY - RADIUS / 6, RADIUS * 0.7, 0xffffff)
-            .setAlpha(0.2);
+        scene.shooter = scene.add.circle(
+            shooterX,
+            shooterY - RADIUS / 6,
+            RADIUS * 0.7,
+            0xffffff
+        );
+        scene.shooter.setAlpha(0.2);
 
         // ✅ add glow ring
         const currentRing = scene.add.circle(
@@ -50,16 +57,17 @@ const Objects = {
 
         // current bubble (on top of shooter)
         scene.currentBubble = createBubble(
-            scene,
             scene.shooter.x,
             scene.shooter.y,
-            getRandomColor(scene)
+            getRandomColor()
         );
 
         return scene.currentBubble;
     },
-    makeSwapIcon(scene) {
-        const nextX = WIDTH / 2 + RADIUS * 4;
+    makeSwapIcon() {
+        const { scene } = GameRegistry;
+
+        const nextX = getCenterX() + RADIUS * 4;
         const nextY = HEIGHT - hSpacing();
 
         const swapArrow = new MyImage(scene, nextX, nextY, "swap_icon");
@@ -72,21 +80,18 @@ const Objects = {
             ease: "Linear", // constant speed
         });
     },
-    makeNextBall(scene) {
-        const nextX = WIDTH / 2 + RADIUS * 4;
+    makeNextBall() {
+        const { scene } = GameRegistry;
+        const nextX = getCenterX() + RADIUS * 4;
         const nextY = HEIGHT - hSpacing();
 
-        scene.nextBubble = createBubble(
-            scene,
-            nextX,
-            nextY,
-            getRandomColor(scene)
-        );
+        scene.nextBubble = createBubble(nextX, nextY, getRandomColor(scene));
         scene.nextBubble.setAlpha(0.8);
 
         return scene.nextBubble;
     },
-    createBubbleGrid(scene) {
+    createBubbleGrid() {
+        const { scene } = GameRegistry;
         const startRows = Math.min(ROWS, 6);
         const delayStep = 25; // ms delay per bubble for wave timing
 
@@ -131,7 +136,8 @@ const Objects = {
             }
         }
     },
-    createBubble(scene, x, y, colorObj) {
+    createBubble(x, y, colorObj) {
+        const { scene } = GameRegistry;
         const s = new MySprite(scene, x, y, `ball_${colorObj.name}`);
         s.setDisplaySize(hSpacing(), hSpacing());
         s.colorObj = colorObj;
@@ -139,7 +145,8 @@ const Objects = {
 
         return s;
     },
-    makeShotsBadge(scene) {
+    makeShotsBadge() {
+        const { scene } = GameRegistry;
         const x = WIDTH / 2.8,
             y = HEIGHT - hSpacing();
         scene.shotsBadge = scene.add.graphics();

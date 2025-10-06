@@ -1,23 +1,26 @@
 import {
     COLORS,
     COLS,
+    GameRegistry,
     HEIGHT,
     OFFSET_X,
     OFFSET_Y,
     RADIUS,
+    ROWS,
     WIDTH,
 } from "../consts";
 import MyText from "../objects/MyText";
-import { getPatterns } from "./helper";
+import { getCenterX, getCenterY, getPatterns } from "./helper";
 import { afterShot } from "./payload";
 
 const States = {
-    missedShot(scene) {
+    missedShot() {
+        const { scene } = GameRegistry;
         if (scene.currentBubble) {
             scene.currentBubble.destroy();
             scene.currentBubble = null;
         }
-        afterShot(scene);
+        afterShot();
     },
     hSpacing() {
         return RADIUS * 2;
@@ -38,7 +41,8 @@ const States = {
 
         return col >= 0 && col < maxCol;
     },
-    textPopup(scene, b, scoreGain) {
+    textPopup(b, scoreGain) {
+        const { scene } = GameRegistry;
         const popup = new MyText(scene, b.x, b.y, `+${scoreGain}`, {
             fontSize: "16px",
             fontFamily: "Arial",
@@ -67,7 +71,8 @@ const States = {
             onComplete: () => b.destroy(),
         });
     },
-    markConnected(scene, bubble, set) {
+    markConnected(bubble, set) {
+        const { scene } = GameRegistry;
         const key = `${bubble.row},${bubble.col}`;
         if (set.has(key)) return;
         set.add(key);
@@ -78,15 +83,17 @@ const States = {
             if (nr < 0 || nr >= ROWS) continue;
             if (!validColForRow(nc, nr)) continue;
             const nb = scene.bubbles[nr]?.[nc];
-            if (nb) markConnected(scene, nb, set);
+            if (nb) markConnected(nb, set);
         }
     },
-    levelCompleted(scene, level) {
+    levelCompleted(level) {
+        const { scene } = GameRegistry;
+
         // 🎉 Flash message
         const message = new MyText(
             scene,
-            WIDTH / 2,
-            HEIGHT / 2,
+            getCenterX(),
+            getCenterY(),
             `🎉 Level ${level} Complete!`,
             {
                 fontSize: "28px",

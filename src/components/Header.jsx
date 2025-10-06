@@ -54,7 +54,7 @@ const Header = ({ player, onLogout }) => {
                         onClick={() => {
                             const newMute = !isMuted;
                             setIsMuted(newMute);
-                            emitEvent("mute", newMute);
+                            emitEvent("sound:toggle", newMute);
                         }}
                         className={`btn btn-sm rounded-circle ${
                             isMuted ? "btn-secondary" : "btn-info"

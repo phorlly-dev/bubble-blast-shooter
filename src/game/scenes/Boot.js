@@ -1,19 +1,30 @@
-import { COLORS } from "../consts";
+import { COLORS, GameRegistry } from "../consts";
+import { loadAssets } from "../utils/helper";
 
 class GameBoot extends Phaser.Scene {
     constructor() {
         super("game-boot");
+        GameRegistry.scene = this;
     }
 
     preload() {
-        this.load.setPath("assets/images/");
-        this.load.image("background", "bg.png");
-        this.load.image("swap_icon", "refresh.png");
-
-        this.load.setPath("assets/sounds/");
-        this.load.audio("click", "click.wav");
-        this.load.audio("walk", "walk.ogg");
-        this.load.audio("win", "win.wav");
+        loadAssets("images", [
+            { key: "background", value: "bg.png" },
+            { key: "swap_icon", value: "refresh.png" },
+        ]);
+        loadAssets(
+            "sounds",
+            [
+                { key: "click", value: "click.wav" },
+                { key: "lose", value: "lose.wav" },
+                { key: "win", value: "win.ogg" },
+                { key: "right", value: "connect.ogg" },
+                { key: "wrong", value: "empty.ogg" },
+                { key: "splash", value: "splash.ogg" },
+                { key: "fall", value: "water_drain.ogg" },
+            ],
+            true
+        );
 
         // Generate ball textures once here
         this.generateBallColors();
@@ -42,13 +53,6 @@ class GameBoot extends Phaser.Scene {
             // Save texture
             graphics.generateTexture(`ball_${color.name}`, 35, 35);
             graphics.destroy();
-
-            //Effect
-            const grap = this.add.graphics();
-            grap.fillStyle(color.hex, 1);
-            grap.fillCircle(8, 8, 8);
-            grap.generateTexture(`particle_${color.name}`, 16, 16);
-            grap.destroy();
         });
     }
 }

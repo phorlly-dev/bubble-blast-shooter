@@ -1,8 +1,8 @@
 import { emitEvent, emitEvents } from "../../hooks/remote";
-import { HEIGHT, RADIUS, WIDTH } from "../consts";
+import { COLORS, GameRegistry, HEIGHT, RADIUS, WIDTH } from "../consts";
 import MyImage from "../objects/MyImage";
 import { snapToCeiling, traceBubblePath } from "../utils/controller";
-import { getMoveLeft } from "../utils/helper";
+import { getCenterX, getCenterY, getMoveLeft } from "../utils/helper";
 import {
     createBubbleGrid,
     makeCurrentBall,
@@ -36,6 +36,7 @@ class GameEngine extends Phaser.Scene {
         this.score = 0;
         this.total = 0;
         this.level = 1;
+        this.countColor = 3;
         this.gameOver = false;
 
         this.shotsLeft = 0;
@@ -44,7 +45,8 @@ class GameEngine extends Phaser.Scene {
     }
 
     init(data) {
-        if (data.spawn_wave) spawnWaveEffect(this);
+        GameRegistry.scene = this;
+        if (data.spawn_wave) spawnWaveEffect();
         this.level = data.level || 1;
         this.score = data.score || 0;
         this.gameOver = data.game_over || false;
@@ -56,7 +58,8 @@ class GameEngine extends Phaser.Scene {
 
     create() {
         emitEvent("current-scene-ready", this);
-        new MyImage(this, WIDTH / 2, HEIGHT / 2, "background").setAlpha(0.6);
+        const bg = new MyImage(this, getCenterX(), getCenterY(), "background");
+        bg.setAlpha(0.6);
 
         // world bounds
         makeWalls(this);
@@ -64,20 +67,22 @@ class GameEngine extends Phaser.Scene {
         this.aimLine = this.add.graphics();
         this.bubbleGroup = this.physics.add.staticGroup();
 
-        createBubbleGrid(this);
-        this.shotsLeft = getMoveLeft(this);
+        createBubbleGrid();
+        this.shotsLeft = getMoveLeft();
 
-        setupInput(this);
-        makeCurrentBall(this);
-        makeSwapIcon(this);
-        makeNextBall(this);
-        makeShotsBadge(this);
+        setupInput();
+        makeCurrentBall();
+        makeSwapIcon();
+        makeNextBall();
+        makeShotsBadge();
+
+        COLORS.forEach((_, idx) => (this.countColor = idx + 1));
     }
 
     update(_time, delta) {
         emitEvents({
-            events: ["level", "score"],
-            args: [this.level, this.score],
+            events: ["level", "score", "color"],
+            args: [this.level, this.score, this.countColor],
         });
 
         if (this.isShooting && this.currentBubble && !this.isSnapping) {
@@ -86,27 +91,26 @@ class GameEngine extends Phaser.Scene {
             const nextX = shot.x + shot.vx * dt;
             const nextY = shot.y + shot.vy * dt;
 
-            // Bounce off walls
+            // Bounce
             if (nextX <= this.wallLeft + RADIUS) {
                 shot.vx = Math.abs(shot.vx);
-            }
-            if (nextX >= this.wallRight - RADIUS) {
+                shot.x = this.wallLeft + RADIUS;
+            } else if (nextX >= this.wallRight - RADIUS) {
                 shot.vx = -Math.abs(shot.vx);
+                shot.x = this.wallRight - RADIUS;
             }
 
-            // Continuous trace (line from old to new)
-            const hit = traceBubblePath(this, shot.x, shot.y, nextX, nextY);
+            // Continuous trace
+            const hit = traceBubblePath(shot.x, shot.y, nextX, nextY);
             if (hit) {
                 const dx = hit.x - shot.x;
                 const dy = hit.y - shot.y;
                 const dist = Math.sqrt(dx * dx + dy * dy);
-
-                // ✅ precise stop just before contact
-                const stopDist = Math.max(0, dist - (hSpacing() - 1.5));
+                const stopDist = Math.max(0, dist - RADIUS * 1.95);
                 shot.x += (dx / dist) * stopDist;
                 shot.y += (dy / dist) * stopDist;
 
-                handleTrueHit(this, shot, hit);
+                handleTrueHit(shot, hit);
                 return;
             }
 
@@ -116,12 +120,12 @@ class GameEngine extends Phaser.Scene {
 
             // Ceiling / out of bounds
             if (shot.y <= this.wallTop + RADIUS) {
-                snapToCeiling(this, shot);
+                snapToCeiling(shot);
                 return;
             }
 
             if (shot.y > HEIGHT + hSpacing()) {
-                missedShot(this);
+                missedShot();
                 return;
             }
         }

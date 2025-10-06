@@ -1,4 +1,12 @@
-import { COLORS, COLS, OFFSET_X, ROWS } from "../consts";
+import {
+    COLORS,
+    COLS,
+    GameRegistry,
+    HEIGHT,
+    OFFSET_X,
+    ROWS,
+    WIDTH,
+} from "../consts";
 import { colToX, hSpacing, rowToY, validColForRow } from "./state";
 
 const Helpers = {
@@ -20,25 +28,29 @@ const Helpers = {
     getClamp(val, min, max) {
         return Phaser.Math.Clamp(val, min, max);
     },
-    getMoveLeft(scene) {
-        let totalBubbles = 0;
-        for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < (scene.bubbles[r]?.length || 0); c++) {
-                if (scene.bubbles[r][c]) totalBubbles++;
-            }
+    getMoveLeft() {
+        const base = getRandom([50, 75, 100, 125, 150, 175, 200]);
+        let bonus = 0;
+        if (base <= 100) {
+            bonus = base / 2;
+        } else if (base <= 150) {
+            bonus = base / 3;
+        } else {
+            bonus = base / 4;
         }
 
-        return Math.ceil(totalBubbles / (scene.level <= 3 ? 1.8 : 1.2)) + 5;
+        return Math.ceil(bonus);
     },
-    getEmptyNeighborPositions(scene, row, col) {
+    getEmptyNeighborPositions(row, col) {
+        const { scene } = GameRegistry;
         const offsets = getPatterns(row);
         const out = [];
         for (const [dr, dc] of offsets) {
             const nr = row + dr;
             const nc = col + dc;
             if (
-                nr < 0 ||
                 nr >= ROWS ||
+                nr < 0 ||
                 !validColForRow(nc, nr) ||
                 scene.bubbles[nr]?.[nc]
             )
@@ -60,7 +72,8 @@ const Helpers = {
     getNearestPoint(line, point, out = Phaser.Geom.Point) {
         return Phaser.Geom.Line.GetNearestPoint(line, point, out);
     },
-    getRandomColor(scene) {
+    getRandomColor() {
+        const { scene } = GameRegistry;
         const present = new Set();
         for (let r = 0; r < scene.bubbles.length; r++) {
             for (let c = 0; c < (scene.bubbles[r]?.length || 0); c++) {
@@ -77,7 +90,8 @@ const Helpers = {
     getBetween(x1, y1, x2, y2) {
         return Phaser.Math.Distance.Between(x1, y1, x2, y2);
     },
-    getAimAngle(scene, pointer) {
+    getAimAngle(pointer) {
+        const { scene } = GameRegistry;
         const sx = scene.currentBubble.x,
             sy = scene.currentBubble.y;
         let dx = pointer.x - sx,
@@ -105,7 +119,8 @@ const Helpers = {
                   [1, 1],
               ];
     },
-    getNeighbors(scene, row, col) {
+    getNeighbors(row, col) {
+        const { scene } = GameRegistry;
         const offsets = getPatterns(row);
         const res = [];
         for (const [dr, dc] of offsets) {
@@ -122,8 +137,23 @@ const Helpers = {
 
         return res;
     },
-    updateShotsBadge(scene) {
+    updateShotsBadge() {
+        const { scene } = GameRegistry;
         if (scene.shotsText) scene.shotsText.setText(String(scene.shotsLeft));
+    },
+    loadAssets(slug, files, isAudio = false) {
+        const { scene } = GameRegistry;
+        scene.load.setPath(`assets/${slug}/`);
+        files.forEach(({ key, value }) => {
+            if (isAudio) scene.load.audio(key, value);
+            else scene.load.image(key, value);
+        });
+    },
+    getCenterX() {
+        return WIDTH / 2;
+    },
+    getCenterY() {
+        return HEIGHT / 2;
     },
 };
 
@@ -141,4 +171,7 @@ export const {
     getPatterns,
     getNeighbors,
     updateShotsBadge,
+    loadAssets,
+    getCenterX,
+    getCenterY,
 } = Helpers;
