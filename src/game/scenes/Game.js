@@ -1,3 +1,4 @@
+import { setValues } from "../../hooks/func";
 import { emitEvent, emitEvents } from "../../hooks/remote";
 import { COLORS, GameRegistry, HEIGHT, RADIUS, WIDTH } from "../consts";
 import MyImage from "../objects/MyImage";
@@ -11,7 +12,12 @@ import {
     makeSwapIcon,
     makeWalls,
 } from "../utils/object";
-import { handleTrueHit, setupInput, spawnWaveEffect } from "../utils/payload";
+import {
+    handleTrueHit,
+    setupInput,
+    shakeBubbles,
+    spawnWaveEffect,
+} from "../utils/payload";
 import { hSpacing, missedShot } from "../utils/state";
 
 class GameEngine extends Phaser.Scene {
@@ -25,6 +31,9 @@ class GameEngine extends Phaser.Scene {
         this.isShooting = false;
         this.isSnapping = false;
         this.aimLine = null;
+        this.swapIcon = null;
+        this.currentRing = null;
+        this.bubbleGroup = null;
         this.mouseOver = false;
 
         this.wallLeft = 0;
@@ -51,6 +60,7 @@ class GameEngine extends Phaser.Scene {
         this.score = data.score || 0;
         this.gameOver = data.game_over || false;
         this.isShooting = data.is_shooting || false;
+        this.shotsLeft = getMoveLeft(this.level);
 
         // clear old events
         if (this.input) this.input.removeAllListeners();
@@ -68,55 +78,54 @@ class GameEngine extends Phaser.Scene {
         this.bubbleGroup = this.physics.add.staticGroup();
 
         createBubbleGrid();
-        this.shotsLeft = getMoveLeft();
-
         setupInput();
         makeCurrentBall();
         makeSwapIcon();
         makeNextBall();
         makeShotsBadge();
 
-        COLORS.forEach((_, idx) => (this.countColor = idx + 1));
+        setValues(COLORS, (_, idx) => (this.countColor = idx + 1));
     }
 
     update(_time, delta) {
-        emitEvents({
-            events: ["level", "score", "color"],
-            args: [this.level, this.score, this.countColor],
-        });
+        emitEvents([
+            { key: "level", value: this.level },
+            { key: "score", value: this.score },
+            { key: "color", value: this.countColor },
+        ]);
 
         if (this.isShooting && this.currentBubble && !this.isSnapping) {
             const shot = this.currentBubble;
-            const dt = Math.min(delta / 1000, 0.02); // max 20ms per frame
-            const nextX = shot.x + shot.vx * dt;
-            const nextY = shot.y + shot.vy * dt;
+            const dt = Math.min(delta / 888, 0.016);
+            const next = { x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
 
             // Bounce
-            if (nextX <= this.wallLeft + RADIUS) {
+            if (next.x <= this.wallLeft + RADIUS) {
                 shot.vx = Math.abs(shot.vx);
                 shot.x = this.wallLeft + RADIUS;
-            } else if (nextX >= this.wallRight - RADIUS) {
+            } else if (next.x >= this.wallRight - RADIUS) {
                 shot.vx = -Math.abs(shot.vx);
                 shot.x = this.wallRight - RADIUS;
             }
 
             // Continuous trace
-            const hit = traceBubblePath(shot.x, shot.y, nextX, nextY);
+            const hit = traceBubblePath(shot.x, shot.y, next.x, next.y).closest;
             if (hit) {
-                const dx = hit.x - shot.x;
-                const dy = hit.y - shot.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                const stopDist = Math.max(0, dist - RADIUS * 1.95);
-                shot.x += (dx / dist) * stopDist;
-                shot.y += (dy / dist) * stopDist;
+                const d = { x: hit.x - shot.x, y: hit.y - shot.y };
+                const dist = Math.sqrt(d.x * d.x + d.y * d.y);
+                const stopDist = Math.max(0, dist - RADIUS);
+
+                shot.x += (d.x / dist) * stopDist;
+                shot.y += (d.y / dist) * stopDist;
 
                 handleTrueHit(shot, hit);
+                shakeBubbles();
                 return;
             }
 
             // No collision → move normally
-            shot.x = nextX;
-            shot.y = nextY;
+            shot.x = next.x;
+            shot.y = next.y;
 
             // Ceiling / out of bounds
             if (shot.y <= this.wallTop + RADIUS) {

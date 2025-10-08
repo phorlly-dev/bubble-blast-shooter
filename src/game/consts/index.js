@@ -11,12 +11,10 @@ const INSTANCES = {
         OFFSET_Y: 40,
     },
     COLORS: [
-        { name: "blue", hex: 0x4eccd4, css: "#3498DB", score: 10 },
-        { name: "yellow", hex: 0xf9ca24, css: "#F1C40F", score: 20 },
-        { name: "red", hex: 0xff6b6b, css: "#E74C3C", score: 30 },
-        { name: "green", hex: 0x45b7d1, css: "#2ECC71", score: 40 },
-        { name: "orange", hex: 0xfd7a0f, css: "#E67E22", score: 35 },
-        { name: "purple", hex: 0x9b59b6, css: "#9B59B6", score: 45 },
+        { name: "red", hex: 0xff6b6b, css: "#E74C3C", score: 10 },
+        { name: "yellow", hex: 0xf9ca24, css: "#F1C40F", score: 15 },
+        { name: "blue", hex: 0x4ecdc4, css: "#3498DB", score: 20 },
+        { name: "green", hex: 0x45b7d1, css: "#2ECC71", score: 25 },
     ],
 };
 

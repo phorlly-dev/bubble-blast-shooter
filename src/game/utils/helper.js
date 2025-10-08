@@ -1,3 +1,4 @@
+import { setValues } from "../../hooks/func";
 import {
     COLORS,
     COLS,
@@ -18,58 +19,53 @@ const Helpers = {
     },
     getGridCol(x, row) {
         const offset = row % 2 === 0 ? 0 : hSpacing() / 2;
+        const val = Math.round((x - OFFSET_X - offset) / hSpacing());
 
-        return getClamp(
-            Math.round((x - OFFSET_X - offset) / hSpacing()),
-            0,
-            COLS - 1
-        );
+        return getClamp(val, 0, COLS - 1);
     },
     getClamp(val, min, max) {
         return Phaser.Math.Clamp(val, min, max);
     },
-    getMoveLeft() {
-        const base = getRandom([50, 75, 100, 125, 150, 175, 200]);
-        let bonus = 0;
-        if (base <= 100) {
-            bonus = base / 2;
-        } else if (base <= 150) {
-            bonus = base / 3;
-        } else {
-            bonus = base / 4;
-        }
+    getMoveLeft(level = 1) {
+        // Base range grows slightly by level
+        const minBase = 12 + Math.min(level, 20);
+        const maxBase = 24 + Math.min(level, 30);
 
-        return Math.ceil(bonus);
+        // Pick random base moves within that range
+        const base = getMinMax(minBase, maxBase);
+
+        // Soft difficulty balancing
+        let bonus = 0;
+        if (level <= 12) bonus = getMinMax(3, 4);
+        else bonus = getMinMax(6, 8);
+
+        // Final calculation
+        const moves = Math.max(12, Math.ceil(base + bonus));
+
+        return moves;
     },
     getEmptyNeighborPositions(row, col) {
         const { scene } = GameRegistry;
         const offsets = getPatterns(row);
         const out = [];
         for (const [dr, dc] of offsets) {
-            const nr = row + dr;
-            const nc = col + dc;
-            if (
-                nr >= ROWS ||
-                nr < 0 ||
-                !validColForRow(nc, nr) ||
-                scene.bubbles[nr]?.[nc]
-            )
+            const num = { row: row + dr, col: col + dc };
+            if (isValid(num.row, num.col) || scene.bubbles[num.row]?.[num.col])
                 continue;
 
-            // ✅ ignore cells *above* hit point — prevent “jump merge”
-            if (dr < 0) continue;
-
             out.push({
-                row: nr,
-                col: nc,
-                x: colToX(nc, nr),
-                y: rowToY(nr),
+                ...num,
+                x: colToX(num.col, num.row),
+                y: rowToY(num.row),
             });
         }
 
         return out;
     },
-    getNearestPoint(line, point, out = Phaser.Geom.Point) {
+    isValid(row, col) {
+        return row >= ROWS || row < 0 || validColForRow(col, row);
+    },
+    getNearestPoint(line, point, out = null) {
         return Phaser.Geom.Line.GetNearestPoint(line, point, out);
     },
     getRandomColor() {
@@ -92,13 +88,12 @@ const Helpers = {
     },
     getAimAngle(pointer) {
         const { scene } = GameRegistry;
-        const sx = scene.currentBubble.x,
-            sy = scene.currentBubble.y;
-        let dx = pointer.x - sx,
-            dy = pointer.y - sy;
-        if (dy >= -4) dy = -Math.max(8, Math.abs(dy) + 1);
+        const { x, y } = scene.currentBubble;
+        let d = { x: pointer.x - x, y: pointer.y - y };
 
-        return Math.atan2(dy, dx);
+        if (d.y >= -4) d.y = -Math.max(8, Math.abs(d.y) + 1);
+
+        return Math.atan2(d.y, d.x);
     },
     getPatterns(row) {
         return row % 2 === 0
@@ -122,16 +117,15 @@ const Helpers = {
     getNeighbors(row, col) {
         const { scene } = GameRegistry;
         const offsets = getPatterns(row);
-        const res = [];
+        let res = [];
+
         for (const [dr, dc] of offsets) {
-            const nr = row + dr,
-                nc = col + dc;
-            if (nr < 0 || nr >= ROWS) continue;
-            if (!validColForRow(nc, nr)) continue;
+            const num = { row: row + dr, col: col + dc };
+
+            if (isValid(num.row, num.col)) continue;
             res.push({
-                row: nr,
-                col: nc,
-                bubble: scene.bubbles[nr]?.[nc] || null,
+                ...num,
+                bubble: scene.bubbles[num.row]?.[num.col] || null,
             });
         }
 
@@ -144,7 +138,7 @@ const Helpers = {
     loadAssets(slug, files, isAudio = false) {
         const { scene } = GameRegistry;
         scene.load.setPath(`assets/${slug}/`);
-        files.forEach(({ key, value }) => {
+        setValues(files, ({ key, value }) => {
             if (isAudio) scene.load.audio(key, value);
             else scene.load.image(key, value);
         });
@@ -154,6 +148,80 @@ const Helpers = {
     },
     getCenterY() {
         return HEIGHT / 2;
+    },
+    getLevelPattern(level = 1) {
+        const config = {
+            rows: 6,
+            obstacleChance: 0,
+            pattern: () => true,
+        };
+
+        switch (true) {
+            // 🟢 Level 1–6: Small triangle (easy to aim)
+            case level <= 6:
+                config.rows = 8;
+                config.pattern = (r, c, maxCol) =>
+                    c > r / 2 && c < maxCol - r / 2;
+                config.obstacleChance = 0;
+                break;
+
+            // 🟡 Level 7–12: Wider triangle or diamond (moderate)
+            case level <= 12:
+                config.rows = 16;
+                config.pattern = (r, c, maxCol) => {
+                    const mid = Math.floor(maxCol / 2);
+                    const dist = Math.abs(c - mid);
+                    return dist < maxCol / 2 - Math.abs(r - 3);
+                };
+                config.obstacleChance = 0.05;
+                break;
+
+            // 🔵 Level 12–18: Full rectangle (denser = harder)
+            case level <= 18:
+                config.rows = 8;
+                config.pattern = () => true;
+                config.obstacleChance = 0.15;
+                break;
+
+            // 🔴 Level 19+: Rectangle + Stones (hardest)
+            default:
+                config.rows = 12;
+                config.pattern = () => Math.random() > 0.2;
+                config.obstacleChance = 0.3;
+                break;
+        }
+
+        return config;
+    },
+    hideUIAfterBonus() {
+        const { scene } = GameRegistry;
+        scene.tweens.add({
+            targets: [
+                scene.nextBubble,
+                scene.swapIcon,
+                scene.currentRing,
+                scene.currentBubble,
+                scene.shooter,
+                scene.shotsBadge,
+                scene.shotsText,
+            ],
+            scale: 0,
+            alpha: 0,
+            duration: 600,
+            ease: "Back.easeIn",
+            onComplete: () => {
+                scene.currentBubble.destroy();
+                scene.nextBubble.destroy();
+                scene.swapIcon.destroy();
+                scene.currentRing.destroy();
+                scene.shooter.destroy();
+                scene.shotsBadge.destroy();
+                scene.shotsText.destroy();
+            },
+        });
+    },
+    getMinMax(min, max) {
+        return Phaser.Math.Between(min, max);
     },
 };
 
@@ -174,4 +242,8 @@ export const {
     loadAssets,
     getCenterX,
     getCenterY,
+    getLevelPattern,
+    hideUIAfterBonus,
+    getMinMax,
+    isValid,
 } = Helpers;

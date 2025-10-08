@@ -1,12 +1,16 @@
+import { setValues } from "../../hooks/func";
 import { emitEvent, onEvent } from "../../hooks/remote";
 import { GameRegistry, HEIGHT, RADIUS, ROWS, WIDTH } from "../consts";
 import MyText from "../objects/MyText";
 import {
     checkGameOver,
     drawAimLine,
+    removeFloatingBubbles,
     shootBubble,
     snapBubbleToClosest,
     snapBubbleToGrid,
+    spawnBonusBubbles,
+    transferNextToCurrent,
 } from "./controller";
 import {
     getBetween,
@@ -14,11 +18,13 @@ import {
     getCenterY,
     getClamp,
     getEmptyNeighborPositions,
+    getMinMax,
     getNeighbors,
+    hideUIAfterBonus,
     updateShotsBadge,
 } from "./helper";
 import { makeNextBall } from "./object";
-import { colToX, levelCompleted, rowToY, textPopup } from "./state";
+import { colToX, endWinSequence, rowToY, textPopup } from "./state";
 
 const Payloads = {
     swapBubbles() {
@@ -26,24 +32,20 @@ const Payloads = {
         if (scene.isShooting || scene.isSnapping) return;
 
         // swap positions visually
-        const curX = scene.currentBubble.x;
-        const curY = scene.currentBubble.y;
-        const nextX = scene.nextBubble.x;
-        const nextY = scene.nextBubble.y;
+        const current = { x: scene.currentBubble.x, y: scene.currentBubble.y };
+        const next = { x: scene.nextBubble.x, y: scene.nextBubble.y };
 
         // tween animation for smoothness
         scene.tweens.add({
+            ...next,
             targets: scene.currentBubble,
-            x: nextX,
-            y: nextY,
             duration: 200,
             ease: "Sine.easeInOut",
         });
 
         scene.tweens.add({
+            ...current,
             targets: scene.nextBubble,
-            x: curX,
-            y: curY,
             duration: 200,
             ease: "Sine.easeInOut",
             onComplete: () => {
@@ -58,13 +60,15 @@ const Payloads = {
             targets: [scene.currentBubble, scene.nextBubble],
             scale: { from: 1.1, to: 1 },
             duration: 180,
-            ease: "Back.easeOut",
+            ease: "Back",
         });
 
         scene.sound.play("click");
     },
     findMatches(seed) {
         const color = seed.colorObj.name;
+        if (color.isStone) return [];
+
         const seen = new Set(),
             stack = [seed],
             out = [];
@@ -75,6 +79,7 @@ const Payloads = {
             if (seen.has(key)) continue;
             seen.add(key);
             out.push(cur);
+
             for (const n of getNeighbors(cur.row, cur.col)) {
                 if (
                     n.bubble &&
@@ -169,6 +174,12 @@ const Payloads = {
                 const offsetX = (Math.random() - 0.5) * 4 * strength;
                 const offsetY = (Math.random() - 0.5) * 4 * strength;
 
+                if (bubble.isStone) {
+                    bubble.setTint(0x444444);
+                    bubble.setAlpha(0.9);
+                    bubble.setDepth(5);
+                }
+
                 scene.tweens.add({
                     targets: b,
                     scale: { from: 1 + 0.25 * strength, to: 1 },
@@ -190,42 +201,49 @@ const Payloads = {
         if (scene.isSnapping) return;
         scene.isSnapping = true;
 
+        if (hit.isStone) {
+            // Bounce slightly or just stop (don’t merge)
+            this.missedShot();
+            return;
+        }
+
         // --- stop movement immediately
         shot.vx = 0;
         shot.vy = 0;
 
         // compute impact offset
-        const dx = shot.x - hit.x;
-        const dy = shot.y - hit.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const ux = dx / len;
-        const uy = dy / len;
-
-        const targetX = hit.x + ux * (RADIUS * 2.02);
-        const targetY = hit.y + uy * (RADIUS * 2.02);
+        const d = { x: shot.x - hit.x, y: shot.y - hit.y };
+        const len = Math.sqrt(d.x * d.x + d.y * d.y) || 1;
+        const u = { x: d.x / len, y: d.y / len };
+        const target = {
+            x: hit.x + u.x * (RADIUS * 2.02),
+            y: hit.y + u.y * (RADIUS * 2.02),
+        };
 
         // tween to settle visually
         scene.tweens.add({
+            ...target,
             targets: shot,
-            x: targetX,
-            y: targetY,
             duration: 60,
             ease: "Back",
             onComplete: () => {
                 // find nearest grid cell
                 const neighbors = getEmptyNeighborPositions(hit.row, hit.col);
-                let best = neighbors[0];
-                let minDist = Infinity;
+                let between = { best: neighbors[0], minDist: Infinity };
+
                 for (const n of neighbors) {
-                    const d = getBetween(targetX, targetY, n.x, n.y);
-                    if (d < minDist) {
-                        minDist = d;
-                        best = n;
+                    const d = getBetween(target.x, target.y, n.x, n.y);
+                    if (d < between.minDist) {
+                        between.best = n;
+                        between.minDist = d;
                     }
                 }
 
-                if (best) snapBubbleToGrid(shot, best.row, best.col);
-                else snapBubbleToClosest(shot);
+                if (between.best) {
+                    snapBubbleToGrid(shot, between.best.row, between.best.col);
+                } else {
+                    snapBubbleToClosest(shot);
+                }
 
                 animateHitShockwave(shot);
                 scene.isSnapping = false;
@@ -254,7 +272,7 @@ const Payloads = {
         }
 
         const combo = Math.max(1, matches.length - 2); // 3-match = 1x, 4-match = 2x, etc.
-        matches.forEach((b) => {
+        setValues(matches, (b) => {
             const colorScore = Math.floor(b.colorObj.score / 2) * combo;
 
             textPopup(b, colorScore);
@@ -282,20 +300,38 @@ const Payloads = {
         scene.currentBubble.setPosition(scene.shooter.x, scene.shooter.y);
         makeNextBall();
     },
-    endScreen(hasWon) {
+    endScreen() {
         const { scene } = GameRegistry;
-        if (scene.gameOver) return;
         scene.aimLine.clear();
-        scene.gameOver = true;
 
-        if (hasWon) {
-            levelCompleted(scene.level);
+        const title = new MyText(
+            scene,
+            getCenterX(),
+            getCenterY() - 22,
+            "GAME OVER!",
+            {
+                fontSize: "40px",
+                fill: "#ff5252",
+                fontStyle: "bold",
+                stroke: "#000",
+                strokeThickness: 6,
+            }
+        );
+        const label = new MyText(
+            scene,
+            getCenterX(),
+            getCenterY() + 64,
+            "Click to Replay",
+            {
+                fontSize: "16px",
+                fill: "#ffff00",
+            }
+        );
+        scene.input.once("pointerdown", () => {
+            title.destroy();
+            label.destroy();
 
-            // You can add a "You Win!" text here if you like
-            scene.time.delayedCall(2000, () => {
-                scene.level += 1;
-                scene.total += scene.score;
-                emitEvent("level", scene.level);
+            scene.time.delayedCall(600, () => {
                 scene.scene.restart({
                     level: scene.level,
                     score: scene.total,
@@ -304,45 +340,71 @@ const Payloads = {
                     spawn_wave: true,
                 });
             });
-        } else {
-            const title = new MyText(
-                scene,
-                getCenterX(),
-                getCenterY() - 22,
-                "GAME OVER!",
-                {
-                    fontSize: "40px",
-                    fill: "#ff5252",
-                    fontStyle: "bold",
-                    stroke: "#000",
-                    strokeThickness: 6,
-                }
-            );
-            const label = new MyText(
-                scene,
-                getCenterX(),
-                getCenterY() + 64,
-                "Click to Replay",
-                {
-                    fontSize: "16px",
-                    fill: "#ffff00",
-                }
-            );
-            scene.input.once("pointerdown", () => {
-                title.destroy();
-                label.destroy();
+        });
+    },
+    handlePlayerWin() {
+        const { scene } = GameRegistry;
+        scene.aimLine.clear();
 
-                scene.time.delayedCall(600, () => {
-                    scene.scene.restart({
-                        level: scene.level,
-                        score: scene.total,
-                        game_over: false,
-                        is_shooting: false,
-                        spawn_wave: true,
-                    });
-                });
-            });
+        transferNextToCurrent();
+
+        const spawnFrom = [scene.nextBubble, scene.currentBubble].filter(
+            Boolean
+        );
+        const bonusDelay = 120;
+        let moves = scene.shotsLeft;
+
+        // Stop any shooting
+        scene.isShooting = true;
+
+        // Chain bonus pops
+        const popTimer = scene.time.addEvent({
+            delay: bonusDelay,
+            loop: true,
+            callback: () => {
+                if (moves <= 0) {
+                    popTimer.remove();
+                    hideUIAfterBonus();
+                    endWinSequence();
+                    return;
+                }
+
+                moves--;
+                spawnBonusBubbles(spawnFrom);
+
+                scene.shotsLeft--;
+                updateShotsBadge(scene);
+            },
+        });
+    },
+    shakeBubbles() {
+        const { scene } = GameRegistry;
+        const bubbles = [];
+
+        // Collect all existing bubbles
+        for (let r = 0; r < scene.bubbles.length; r++) {
+            for (let c = 0; c < (scene.bubbles[r]?.length || 0); c++) {
+                const b = scene.bubbles[r][c];
+                if (b) bubbles.push(b);
+            }
         }
+
+        // Apply tiny shake animation to all
+        setValues(bubbles, (b, i) => {
+            scene.tweens.add({
+                targets: b,
+                x: b.x + getMinMax(-2, 2), // small horizontal wiggle
+                y: b.y + getMinMax(-2, 2), // small vertical jiggle
+                yoyo: true,
+                duration: 60,
+                delay: i * 5,
+                ease: "Sine.easeInOut",
+                onComplete: () => {
+                    // After shake, recheck for floaters
+                    if (i === bubbles.length - 1) removeFloatingBubbles();
+                },
+            });
+        });
     },
 };
 
@@ -356,4 +418,6 @@ export const {
     handleMatches,
     afterShot,
     endScreen,
+    handlePlayerWin,
+    shakeBubbles,
 } = Payloads;

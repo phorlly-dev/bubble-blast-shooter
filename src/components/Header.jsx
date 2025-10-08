@@ -9,14 +9,13 @@ const Header = ({ player, onLogout }) => {
 
     // Listen for Phaser events and update state
     React.useEffect(() => {
-        const events = ["score", "level"];
-        const callbacks = [
-            (data = 0) => setScore(data),
-            (data = 1) => setLevel(data),
+        const events = [
+            { key: "score", value: (data = 0) => setScore(data) },
+            { key: "level", value: (data = 1) => setLevel(data) },
         ];
 
-        onEvents({ events, callbacks });
-        return () => offEvents({ events, callbacks });
+        onEvents(events);
+        return () => offEvents(events);
     }, [score, level]);
 
     return (

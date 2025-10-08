@@ -11,6 +11,7 @@ class GameBoot extends Phaser.Scene {
         loadAssets("images", [
             { key: "background", value: "bg.png" },
             { key: "swap_icon", value: "refresh.png" },
+            { key: "ball_stone", value: "stone.png" },
         ]);
         loadAssets(
             "sounds",
@@ -22,6 +23,7 @@ class GameBoot extends Phaser.Scene {
                 { key: "wrong", value: "empty.ogg" },
                 { key: "splash", value: "splash.ogg" },
                 { key: "fall", value: "water_drain.ogg" },
+                { key: "pop", value: "pop.wav" },
             ],
             true
         );

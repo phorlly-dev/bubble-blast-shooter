@@ -1,21 +1,22 @@
 import Phaser from "phaser";
+import { setValues } from "./func";
 
 // Used to emit events between components, HTML and Phaser scenes
 export const RemoteEvent = new Phaser.Events.EventEmitter();
 const GameEvent = {
-    onEvents({ events, callbacks }) {
-        events.forEach((event, idx) => {
-            RemoteEvent.on(event, callbacks[idx]);
+    onEvents(events) {
+        setValues(events, ({ key, value }) => {
+            RemoteEvent.on(key, value);
         });
     },
-    offEvents({ events, callbacks }) {
-        events.forEach((event, idx) => {
-            RemoteEvent.off(event, callbacks[idx]);
+    offEvents(events) {
+        setValues(events, ({ key, value }) => {
+            RemoteEvent.off(key, value);
         });
     },
-    emitEvents({ events, args = [] }) {
-        events.forEach((event, idx) => {
-            RemoteEvent.emit(event, args[idx]);
+    emitEvents(events) {
+        setValues(events, ({ key, value }) => {
+            RemoteEvent.emit(key, value);
         });
     },
     emitEvent(event, arg = null) {

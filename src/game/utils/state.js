@@ -1,16 +1,16 @@
+import { setValues } from "../../hooks/func";
+import { emitEvent } from "../../hooks/remote";
 import {
     COLORS,
     COLS,
     GameRegistry,
-    HEIGHT,
     OFFSET_X,
     OFFSET_Y,
     RADIUS,
-    ROWS,
     WIDTH,
 } from "../consts";
 import MyText from "../objects/MyText";
-import { getCenterX, getCenterY, getPatterns } from "./helper";
+import { getCenterX, getCenterY, getMinMax, getNeighbors } from "./helper";
 import { afterShot } from "./payload";
 
 const States = {
@@ -39,7 +39,7 @@ const States = {
     validColForRow(col, row) {
         const maxCol = row % 2 === 0 ? COLS : COLS - 1;
 
-        return col >= 0 && col < maxCol;
+        return col < 0 || col >= maxCol;
     },
     textPopup(b, scoreGain) {
         const { scene } = GameRegistry;
@@ -71,19 +71,23 @@ const States = {
             onComplete: () => b.destroy(),
         });
     },
-    markConnected(bubble, set) {
-        const { scene } = GameRegistry;
-        const key = `${bubble.row},${bubble.col}`;
-        if (set.has(key)) return;
-        set.add(key);
+    markConnected(bubble, connected) {
+        const stack = [{ row: bubble.row, col: bubble.col }];
 
-        for (const [dr, dc] of getPatterns(bubble.row)) {
-            const nr = bubble.row + dr;
-            const nc = bubble.col + dc;
-            if (nr < 0 || nr >= ROWS) continue;
-            if (!validColForRow(nc, nr)) continue;
-            const nb = scene.bubbles[nr]?.[nc];
-            if (nb) markConnected(nb, set);
+        while (stack.length) {
+            const { row, col } = stack.pop();
+            const key = `${row},${col}`;
+            if (connected.has(key)) continue;
+
+            connected.add(key);
+
+            // ✅ Use your existing, correct getNeighbors()
+            const neighbors = getNeighbors(row, col);
+            for (const n of neighbors) {
+                if (n.bubble && !connected.has(`${n.row},${n.col}`)) {
+                    stack.push({ ...n });
+                }
+            }
         }
     },
     levelCompleted(level) {
@@ -126,15 +130,49 @@ const States = {
         };
 
         // Use colors directly as tints
-        COLORS.forEach((color) => {
+        setValues(COLORS, ({ hex }) => {
             const emitter = scene.add.particles(0, 0, "particle", {
                 ...emitterConfig,
-                tint: color.hex, // ✅ color particles
+                tint: hex, // ✅ color particles
             });
 
             scene.time.delayedCall(2000, () => {
                 emitter.stop();
                 emitter.destroy();
+            });
+        });
+    },
+    endWinSequence() {
+        const { scene } = GameRegistry;
+        // Flash effect before restart
+        scene.cameras.main.flash(400, 255, 255, 255);
+
+        // Big bubble burst animation
+        const bubbles = scene.bubbleGroup.getChildren();
+        setValues(bubbles, (b, i) => {
+            scene.tweens.add({
+                targets: b,
+                scale: 1.5,
+                alpha: 0,
+                duration: getMinMax(300, 600),
+                delay: i * 20,
+                ease: "Back.easeIn",
+                onComplete: () => b.destroy(),
+            });
+        });
+        levelCompleted(scene.level);
+
+        // Restart game after short delay
+        scene.time.delayedCall(1200, () => {
+            scene.level += 1;
+            scene.total += scene.score;
+            emitEvent("level", scene.level);
+            scene.scene.restart({
+                level: scene.level,
+                score: scene.total,
+                is_shooting: false,
+                game_over: false,
+                spawn_wave: true,
             });
         });
     },
@@ -150,4 +188,5 @@ export const {
     textPopup,
     markConnected,
     levelCompleted,
+    endWinSequence,
 } = States;
