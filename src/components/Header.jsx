@@ -1,5 +1,5 @@
 import * as React from "react";
-import { formatNumber } from "../hooks/format";
+import { formatNumber, formatPlayer } from "../hooks/format";
 import { emitEvent, offEvents, onEvents } from "../hooks/remote";
 
 const Header = ({ player, onLogout }) => {
@@ -25,22 +25,30 @@ const Header = ({ player, onLogout }) => {
                 <section className="d-flex justify-content-center justify-content-md-start align-items-center gap-4">
                     <div className="text-muted fs-6 fs-md-5">
                         <i className="fa fa-user"></i>
-                        <span className="text-info text-capitalize ms-1">
-                            {player}
+                        <span
+                            className="text-info text-capitalize ms-1"
+                            title={player}
+                        >
+                            {formatPlayer(player)}
                         </span>
                     </div>
 
                     <div className="text-muted d-flex align-items-center fs-6 fs-md-5">
                         <i className="fa fa-star text-warning me-1"></i>
                         Score:{" "}
-                        <span className="text-warning fw-bold ms-1">
+                        <span
+                            className="text-warning fw-bold ms-1"
+                            title={score}
+                        >
                             {formatNumber(score)}
                         </span>
                     </div>
                     <div className="text-muted d-flex align-items-center fs-6 fs-md-5">
                         <i className="fa fa-level-up-alt text-info me-1"></i>
                         Level:{" "}
-                        <span className="text-info fw-bold ms-1">{level}</span>
+                        <span className="text-info fw-bold ms-1" title={level}>
+                            {formatNumber(level)}
+                        </span>
                     </div>
                 </section>
 

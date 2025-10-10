@@ -8,6 +8,9 @@ const Formats = {
             .toLowerCase() // make lowercase
             .replace(/\s+/g, "-"); // replace spaces with "-"
     },
+    formatPlayer(player) {
+        return player.length > 12 ? player.slice(0, 12) + "..." : player;
+    },
 };
 
-export const { formatNumber, formatName } = Formats;
+export const { formatNumber, formatName, formatPlayer } = Formats;

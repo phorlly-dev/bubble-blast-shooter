@@ -1,3 +1,4 @@
+import { setValues } from "../../hooks/func";
 import { COLORS, GameRegistry } from "../consts";
 import { loadAssets } from "../utils/helper";
 
@@ -8,6 +9,40 @@ class GameBoot extends Phaser.Scene {
     }
 
     preload() {
+        //Load assets
+        this.loadAsset();
+
+        // Generate ball textures once here
+        this.generateBallColors();
+    }
+
+    create() {
+        this.scene.start("game-engine");
+    }
+
+    generateBallColors() {
+        setValues(COLORS, ({ hex, name }) => {
+            const graphics = this.add.graphics();
+
+            // Outer glow
+            graphics.fillStyle(hex, 0.2);
+            graphics.fillCircle(17.5, 17.5, 18);
+
+            // Main ball
+            graphics.fillStyle(hex, 1);
+            graphics.fillCircle(17.5, 17.5, 16);
+
+            // Highlight
+            graphics.fillStyle(0xffffff, 1);
+            graphics.fillCircle(14, 13, 5);
+
+            // Save texture
+            graphics.generateTexture(`ball_${name}`, 35, 35);
+            graphics.destroy();
+        });
+    }
+
+    loadAsset() {
         loadAssets("images", [
             { key: "background", value: "bg.png" },
             { key: "swap_icon", value: "refresh.png" },
@@ -27,35 +62,6 @@ class GameBoot extends Phaser.Scene {
             ],
             true
         );
-
-        // Generate ball textures once here
-        this.generateBallColors();
-    }
-
-    create() {
-        this.scene.start("game-engine");
-    }
-
-    generateBallColors() {
-        COLORS.forEach((color) => {
-            const graphics = this.add.graphics();
-
-            // Outer glow
-            graphics.fillStyle(color.hex, 0.2);
-            graphics.fillCircle(17.5, 17.5, 18);
-
-            // Main ball
-            graphics.fillStyle(color.hex, 1);
-            graphics.fillCircle(17.5, 17.5, 16);
-
-            // Highlight
-            graphics.fillStyle(0xffffff, 1);
-            graphics.fillCircle(14, 13, 5);
-
-            // Save texture
-            graphics.generateTexture(`ball_${color.name}`, 35, 35);
-            graphics.destroy();
-        });
     }
 }
 
