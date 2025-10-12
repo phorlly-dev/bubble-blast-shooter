@@ -1,30 +1,37 @@
 import { setValues } from "../../hooks/func";
 import { emitEvent, onEvent } from "../../hooks/remote";
-import { GameRegistry, HEIGHT, RADIUS, ROWS, WIDTH } from "../consts";
+import { GameRegistry, HEIGHT, RADIUS, WIDTH } from "../consts";
 import MyText from "../objects/MyText";
 import {
     checkGameOver,
     drawAimLine,
     removeFloatingBubbles,
     shootBubble,
-    snapBubbleToClosest,
-    snapBubbleToGrid,
+    snapFromImpact,
     spawnBonusBubbles,
     transferNextToCurrent,
 } from "./controller";
 import {
-    getBetween,
+    getBetween4,
     getCenterX,
     getCenterY,
     getClamp,
-    getEmptyNeighborPositions,
-    getMinMax,
+    getBetween2,
     getNeighbors,
-    hideUIAfterBonus,
-    updateShotsBadge,
+    getEmptyNeighbors,
+    getMaxCol,
 } from "./helper";
 import { makeNextBall } from "./object";
-import { colToX, endWinSequence, rowToY, textPopup } from "./state";
+import {
+    clearScreen,
+    colToX,
+    endWinSequence,
+    rowToY,
+    hideUIAfterBonus,
+    textPopup,
+    updateShotsBadge,
+    missedShot,
+} from "./state";
 
 const Payloads = {
     swapBubbles() {
@@ -67,8 +74,6 @@ const Payloads = {
     },
     findMatches(seed) {
         const color = seed.colorObj.name;
-        if (color.isStone) return [];
-
         const seen = new Set(),
             stack = [seed],
             out = [];
@@ -76,6 +81,7 @@ const Payloads = {
         while (stack.length) {
             const cur = stack.pop();
             const key = `${cur.row},${cur.col}`;
+
             if (seen.has(key)) continue;
             seen.add(key);
             out.push(cur);
@@ -95,9 +101,7 @@ const Payloads = {
     setupInput() {
         const { scene } = GameRegistry;
         // NEW: Mouse over/out events for aim line visibility
-        scene.input.on("gameover", () => {
-            scene.mouseOver = true;
-        });
+        scene.input.on("gameover", () => (scene.mouseOver = true));
         scene.input.on("gameout", () => {
             scene.mouseOver = false;
             scene.aimLine.clear();
@@ -108,13 +112,13 @@ const Payloads = {
                 return;
 
             // --- check if player clicked on swap area ---
-            const swapDist = getBetween(
+            const swapDist = getBetween4(
                 p.x,
                 p.y,
                 scene.nextBubble.x,
                 scene.nextBubble.y
             );
-            const currentDist = getBetween(
+            const currentDist = getBetween4(
                 p.x,
                 p.y,
                 scene.currentBubble.x,
@@ -162,15 +166,15 @@ const Payloads = {
         const { scene } = GameRegistry;
         const maxDist = RADIUS * 4.5; // effect radius
 
-        for (let r = 0; r < ROWS; r++) {
-            for (let c = 0; c < (scene.bubbles[r]?.length || 0); c++) {
-                const b = scene.bubbles[r][c];
-                if (!b) continue;
+        for (let row = 0; row < scene.bubbles.length; row++) {
+            for (let col = 0; col < getMaxCol(row); col++) {
+                const ball = scene.bubbles[row][col];
+                if (!ball) continue;
 
-                const d = getBetween(bubble.x, bubble.y, b.x, b.y);
-                if (d > maxDist) continue;
+                const dist = getBetween4(bubble.x, bubble.y, ball.x, ball.y);
+                if (dist > maxDist) continue;
 
-                const strength = getClamp(1 - d / maxDist, 0, 1);
+                const strength = getClamp(1 - dist / maxDist, 0, 1);
                 const offsetX = (Math.random() - 0.5) * 4 * strength;
                 const offsetY = (Math.random() - 0.5) * 4 * strength;
 
@@ -181,16 +185,19 @@ const Payloads = {
                 }
 
                 scene.tweens.add({
-                    targets: b,
+                    targets: ball,
                     scale: { from: 1 + 0.25 * strength, to: 1 },
-                    x: b.x + offsetX,
-                    y: b.y + offsetY,
+                    x: ball.x + offsetX,
+                    y: ball.y + offsetY,
                     duration: 140 + Math.random() * 100,
                     ease: "Sine.easeOut",
                     yoyo: true,
                     onComplete: () => {
-                        b.setPosition(colToX(b.col, b.row), rowToY(b.row));
-                        b.setScale(1);
+                        ball.setPosition(
+                            colToX(ball.col, ball.row),
+                            rowToY(ball.row)
+                        );
+                        ball.setScale(1);
                     },
                 });
             }
@@ -203,53 +210,17 @@ const Payloads = {
 
         if (hit.isStone) {
             // Bounce slightly or just stop (don’t merge)
-            this.missedShot();
+            missedShot();
             return;
         }
 
         // --- stop movement immediately
-        shot.vx = 0;
-        shot.vy = 0;
-
-        // compute impact offset
-        const d = { x: shot.x - hit.x, y: shot.y - hit.y };
-        const len = Math.sqrt(d.x * d.x + d.y * d.y) || 1;
-        const u = { x: d.x / len, y: d.y / len };
-        const target = {
-            x: hit.x + u.x * (RADIUS * 2.02),
-            y: hit.y + u.y * (RADIUS * 2.02),
-        };
-
-        // tween to settle visually
-        scene.tweens.add({
-            ...target,
-            targets: shot,
-            duration: 60,
-            ease: "Back",
-            onComplete: () => {
-                // find nearest grid cell
-                const neighbors = getEmptyNeighborPositions(hit.row, hit.col);
-                let between = { best: neighbors[0], minDist: Infinity };
-
-                for (const n of neighbors) {
-                    const d = getBetween(target.x, target.y, n.x, n.y);
-                    if (d < between.minDist) {
-                        between.best = n;
-                        between.minDist = d;
-                    }
-                }
-
-                if (between.best) {
-                    snapBubbleToGrid(shot, between.best.row, between.best.col);
-                } else {
-                    snapBubbleToClosest(shot);
-                }
-
-                animateHitShockwave(shot);
-                scene.isSnapping = false;
-                scene.isShooting = false;
-            },
-        });
+        shot.body?.stop?.();
+        snapFromImpact(shot, hit);
+        shakeBubbles();
+        animateHitShockwave(shot);
+        scene.isSnapping = false;
+        scene.isShooting = false;
     },
     handleMatches(matches) {
         const { scene } = GameRegistry;
@@ -274,10 +245,17 @@ const Payloads = {
         const combo = Math.max(1, matches.length - 2); // 3-match = 1x, 4-match = 2x, etc.
         setValues(matches, (b) => {
             const colorScore = Math.floor(b.colorObj.score / 2) * combo;
+            scene.tweens.add({
+                targets: b,
+                alpha: 0,
+                scale: 0.2,
+                duration: 150,
+                ease: "Power2",
+                onComplete: () => b.destroy(),
+            });
 
             textPopup(b, colorScore);
             scene.score += colorScore;
-
             scene.bubbles[b.row][b.col] = null;
             scene.bubbleGroup.remove(b);
         });
@@ -323,10 +301,16 @@ const Payloads = {
             getCenterY() + 64,
             "Click to Replay",
             {
-                fontSize: "16px",
+                fontSize: "24px",
                 fill: "#ffff00",
+                fontStyle: "bold",
+                stroke: "#000",
+                strokeThickness: 4,
             }
         );
+
+        clearScreen();
+        hideUIAfterBonus();
         scene.input.once("pointerdown", () => {
             title.destroy();
             label.destroy();
@@ -346,11 +330,7 @@ const Payloads = {
         const { scene } = GameRegistry;
         scene.aimLine.clear();
 
-        transferNextToCurrent();
-
-        const spawnFrom = [scene.nextBubble, scene.currentBubble].filter(
-            Boolean
-        );
+        const spawnFrom = transferNextToCurrent();
         const bonusDelay = 120;
         let moves = scene.shotsLeft;
 
@@ -373,38 +353,89 @@ const Payloads = {
                 spawnBonusBubbles(spawnFrom);
 
                 scene.shotsLeft--;
-                updateShotsBadge(scene);
+                updateShotsBadge();
             },
         });
     },
     shakeBubbles() {
         const { scene } = GameRegistry;
-        const bubbles = [];
+        let bubbles = [];
 
         // Collect all existing bubbles
-        for (let r = 0; r < scene.bubbles.length; r++) {
-            for (let c = 0; c < (scene.bubbles[r]?.length || 0); c++) {
-                const b = scene.bubbles[r][c];
-                if (b) bubbles.push(b);
+        for (let row = 0; row < scene.bubbles.length; row++) {
+            for (let col = 0; col < getMaxCol(row); col++) {
+                const bubble = scene.bubbles[row][col];
+                if (bubble) bubbles.push(bubble);
             }
         }
 
         // Apply tiny shake animation to all
-        setValues(bubbles, (b, i) => {
+        setValues(bubbles, (val, idx) => {
             scene.tweens.add({
-                targets: b,
-                x: b.x + getMinMax(-2, 2), // small horizontal wiggle
-                y: b.y + getMinMax(-2, 2), // small vertical jiggle
+                targets: val,
+                x: val.x + getBetween2(-2, 2), // small horizontal wiggle
+                y: val.y + getBetween2(-2, 2), // small vertical jiggle
                 yoyo: true,
                 duration: 60,
-                delay: i * 5,
+                delay: idx * 5,
                 ease: "Sine.easeInOut",
                 onComplete: () => {
                     // After shake, recheck for floaters
-                    if (i === bubbles.length - 1) removeFloatingBubbles();
+                    if (idx === bubbles.length - 1) removeFloatingBubbles();
                 },
             });
         });
+    },
+    chooseClosestEmptyToHit(shot, hit) {
+        const candidates = getEmptyNeighbors(hit.row, hit.col);
+        if (!candidates.length) return null;
+
+        let best = candidates[0];
+        let bestD = Infinity;
+
+        for (const s of candidates) {
+            const d = getBetween4(shot.x, shot.y, s.x, s.y);
+            if (d < bestD) {
+                bestD = d;
+                best = s;
+            }
+        }
+
+        return best;
+    },
+    findNearestGlobalEmpty(fromX, fromY) {
+        const { scene } = GameRegistry;
+        let best = null;
+        let bestDist = Infinity;
+
+        for (let r = 0; r < scene.bubbles.length; r++) {
+            const maxCol = getMaxCol(r); // 11 on even scene.bubbles.length, 10 on odd (etc.)
+            const rowArr = scene.bubbles[r] || [];
+            for (let c = 0; c < maxCol; c++) {
+                if (rowArr[c]) continue; // occupied -> skip
+                const cx = colToX(c, r);
+                const cy = rowToY(r);
+                const d = getBetween4(fromX, fromY, cx, cy);
+                if (d < bestDist) {
+                    bestDist = d;
+                    best = { row: r, col: c, x: cx, y: cy };
+                }
+            }
+        }
+
+        return best; // may be null if the board is full
+    },
+    ensureRow(row) {
+        const { bubbles } = GameRegistry.scene;
+        if (!bubbles[row]) {
+            bubbles[row] = new Array(getMaxCol(row)).fill(null);
+        } else if (bubbles[row].length !== getMaxCol(row)) {
+            // normalize rows created earlier with wrong length
+            const a = new Array(getMaxCol(row)).fill(null);
+            for (let i = 0; i < bubbles[row].length; i++)
+                a[i] = bubbles[row][i];
+            bubbles[row] = a;
+        }
     },
 };
 
@@ -420,4 +451,7 @@ export const {
     endScreen,
     handlePlayerWin,
     shakeBubbles,
+    chooseClosestEmptyToHit,
+    findNearestGlobalEmpty,
+    ensureRow,
 } = Payloads;

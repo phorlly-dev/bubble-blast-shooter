@@ -3,12 +3,12 @@ const INSTANCES = {
         WIDTH: 390,
         HEIGHT: 460,
     },
-    TILES: {
+    CONFIG: {
         RADIUS: 17,
-        COLS: 10,
-        ROWS: 8,
-        OFFSET_X: 40,
-        OFFSET_Y: 40,
+        H_SPACING: 34,
+        V_SPACING: Math.sqrt(3) * 17,
+        COLS: 11,
+        OFFSET_Y: 40, // top margin
     },
     COLORS: [
         { name: "red", hex: 0xff6b6b, css: "#E74C3C", score: 10 },
@@ -18,10 +18,10 @@ const INSTANCES = {
     ],
 };
 
+export const { GAME, CONFIG, COLORS } = INSTANCES;
+export const { WIDTH, HEIGHT } = GAME;
+export const { RADIUS, H_SPACING, V_SPACING, COLS, ROWS, OFFSET_Y } = CONFIG;
 export const GameRegistry = {
     scene: null, // active scene
     game: null, // Phaser.Game instance (optional)
 };
-export const { GAME, TILES, COLORS } = INSTANCES;
-export const { WIDTH, HEIGHT } = GAME;
-export const { RADIUS, COLS, ROWS, OFFSET_X, OFFSET_Y } = TILES;

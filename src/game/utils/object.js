@@ -1,9 +1,8 @@
 import {
     COLORS,
-    COLS,
     GameRegistry,
+    H_SPACING,
     HEIGHT,
-    OFFSET_X,
     OFFSET_Y,
     RADIUS,
     WIDTH,
@@ -14,22 +13,23 @@ import MyText from "../objects/MyText";
 import {
     getCenterX,
     getLevelPattern,
+    getMaxCol,
     getRandom,
     getRandomColor,
 } from "./helper";
-import { colToX, hSpacing, rowToY } from "./state";
+import { colToX, rowToY } from "./state";
 
 const Objects = {
     makeWalls() {
         const { scene } = GameRegistry;
-        scene.wallLeft = OFFSET_X - RADIUS;
-        scene.wallRight = OFFSET_X + (COLS - 1) * hSpacing() + RADIUS;
+        scene.wallLeft = RADIUS;
+        scene.wallRight = WIDTH - RADIUS;
         scene.wallTop = OFFSET_Y;
         scene.physics.world.setBounds(
             scene.wallLeft,
-            scene.wallTop - 100,
+            scene.wallTop,
             scene.wallRight - scene.wallLeft,
-            HEIGHT - scene.wallTop + 100,
+            HEIGHT - scene.wallTop,
             true,
             true,
             true,
@@ -42,7 +42,7 @@ const Objects = {
         // dark shooter base
         scene.shooter = scene.add.circle(
             getCenterX(),
-            HEIGHT - hSpacing() - RADIUS / 6,
+            HEIGHT - H_SPACING - RADIUS / 6,
             RADIUS * 0.7,
             0xffffff
         );
@@ -69,7 +69,7 @@ const Objects = {
         scene.swapIcon = new MyImage(
             scene,
             getCenterX() + RADIUS * 4,
-            HEIGHT - hSpacing(),
+            HEIGHT - H_SPACING,
             "swap_icon"
         );
         scene.swapIcon.setScale(0.16).setAlpha(0.6);
@@ -84,8 +84,8 @@ const Objects = {
     makeNextBall() {
         const { scene } = GameRegistry;
         scene.nextBubble = createBubble(
-            getCenterX() + RADIUS * 4,
-            HEIGHT - hSpacing(),
+            scene.swapIcon.x,
+            scene.swapIcon.y,
             getRandomColor()
         );
         scene.nextBubble.setAlpha(0.8);
@@ -93,18 +93,17 @@ const Objects = {
     createBubbleGrid() {
         const { scene } = GameRegistry;
         const config = getLevelPattern(scene.level);
-        const isStone =
-            scene.level >= 3 && Math.random() < config.obstacleChance;
-        const delayStep = 26;
+        const isStone = Math.random() < config.obstacleChance;
+        const delayStep = 24;
 
         let delayCounter = 0;
-        for (let r = 0; r < config.rows; r++) {
-            scene.bubbles[r] = [];
-            const maxCol = r % 2 === 0 ? COLS : COLS - 1;
+        for (let row = 0; row < config.rows; row++) {
+            scene.bubbles[row] = [];
+            const maxCol = getMaxCol(row);
 
-            for (let c = 0; c < maxCol; c++) {
-                if (!config.pattern(r, c, maxCol)) {
-                    scene.bubbles[r][c] = null;
+            for (let col = 0; col < maxCol; col++) {
+                if (!config.pattern(row, col, maxCol)) {
+                    scene.bubbles[row][col] = null;
                     continue;
                 }
 
@@ -113,31 +112,29 @@ const Objects = {
                         ? { name: "stone", hex: 0x666666, css: "#666666" }
                         : getRandom(COLORS);
 
-                const x = colToX(c, r);
-                const y = rowToY(r);
+                const x = colToX(col, row);
+                const y = rowToY(row);
 
                 // Bubble base sprite
-                const key = isStone ? "ball_stone" : `ball_${colorObj.name}`;
-                const bubble = scene.bubbleGroup.create(x, y - 100, key); // start slightly above
-                bubble.setDisplaySize(hSpacing(), hSpacing());
-                bubble.setScale(0);
-                bubble.alpha = 0;
-                bubble.colorObj = colorObj;
-                bubble.row = r;
-                bubble.col = c;
-                bubble.body.setCircle(RADIUS);
-                bubble.isStone = isStone;
+                const bubble = createBubble(x, y - 100, colorObj); // start slightly above
+                const scale = (RADIUS * 2) / bubble.width;
 
-                // add to group for management
-                scene.bubbleGroup.add(bubble);
-
-                // ✅ Make its hit area circular
+                scene.physics.add.existing(bubble);
+                bubble.setOrigin(0.5).setDisplaySize(H_SPACING, H_SPACING);
+                bubble.setScale(scale).setAlpha(0);
+                const off = bubble.displayWidth / 2 - RADIUS;
+                bubble.body.setCircle(RADIUS, off, off).setImmovable(true);
                 bubble.setInteractive(
                     new Phaser.Geom.Circle(RADIUS, RADIUS, RADIUS),
                     Phaser.Geom.Circle.Contains
                 );
 
-                scene.bubbles[r][c] = bubble;
+                // add to group for management
+                bubble.row = row;
+                bubble.col = col;
+                bubble.isStone = isStone;
+                scene.bubbles[row][col] = bubble;
+                scene.bubbleGroup.add(bubble);
 
                 // Animate drop + scale with wave delay
                 scene.time.delayedCall(delayCounter, () => {
@@ -159,15 +156,16 @@ const Objects = {
         const { scene } = GameRegistry;
         const bubble = new MySprite(scene, x, y, `ball_${colorObj.name}`);
 
-        bubble.setDisplaySize(hSpacing(), hSpacing());
+        bubble.setDisplaySize(H_SPACING, H_SPACING);
         bubble.colorObj = colorObj;
+        bubble.setOrigin(0.5);
         bubble.hit = false; // Flag for collision handling
 
         return bubble;
     },
     makeShotsBadge() {
         const { scene } = GameRegistry;
-        const num = { x: WIDTH / 2.8, y: HEIGHT - hSpacing() };
+        const num = { x: WIDTH / 2.8, y: HEIGHT - H_SPACING };
 
         scene.shotsBadge = scene.add.graphics();
         scene.shotsBadge.fillStyle(0x000000, 0.35);

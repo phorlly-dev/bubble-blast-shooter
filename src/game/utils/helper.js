@@ -1,14 +1,12 @@
-import { setValues } from "../../hooks/func";
 import {
     COLORS,
     COLS,
     GameRegistry,
+    H_SPACING,
     HEIGHT,
-    OFFSET_X,
-    ROWS,
     WIDTH,
 } from "../consts";
-import { colToX, hSpacing, rowToY, validColForRow } from "./state";
+import { colToX, isEven, rowToY } from "./state";
 
 const Helpers = {
     getLinear(args, num) {
@@ -18,52 +16,49 @@ const Helpers = {
         return Phaser.Utils.Array.GetRandom(args);
     },
     getGridCol(x, row) {
-        const offset = row % 2 === 0 ? 0 : hSpacing() / 2;
-        const val = Math.round((x - OFFSET_X - offset) / hSpacing());
-
-        return getClamp(val, 0, COLS - 1);
+        return Math.round((x - getGlobalX() - getOffsetX(row)) / H_SPACING);
     },
     getClamp(val, min, max) {
         return Phaser.Math.Clamp(val, min, max);
     },
     getMoveLeft(level = 1) {
         // Base range grows slightly by level
-        const minBase = 12 + Math.min(level, 20);
-        const maxBase = 24 + Math.min(level, 30);
+        const minBase = 12 + Math.min(level * 2, 24);
+        const maxBase = 24 + Math.min(level * 3, 32);
 
         // Pick random base moves within that range
-        const base = getMinMax(minBase, maxBase);
+        const base = getBetween2(minBase, maxBase);
 
         // Soft difficulty balancing
         let bonus = 0;
-        if (level <= 12) bonus = getMinMax(3, 4);
-        else bonus = getMinMax(6, 8);
+        if (level <= 20) bonus = getBetween2(5, 8);
+        else bonus = getBetween2(6, 9);
 
         // Final calculation
-        const moves = Math.max(12, Math.ceil(base + bonus));
+        const moves = Math.max(32, Math.ceil(base + bonus));
 
         return moves;
     },
-    getEmptyNeighborPositions(row, col) {
-        const { scene } = GameRegistry;
-        const offsets = getPatterns(row);
-        const out = [];
-        for (const [dr, dc] of offsets) {
-            const num = { row: row + dr, col: col + dc };
-            if (isValid(num.row, num.col) || scene.bubbles[num.row]?.[num.col])
-                continue;
+    getEmptyNeighbors(row, col) {
+        const { bubbles } = GameRegistry.scene;
 
-            out.push({
-                ...num,
-                x: colToX(num.col, num.row),
-                y: rowToY(num.row),
-            });
+        const out = [];
+        for (const [dr, dc] of getPatterns(row)) {
+            const nr = row + dr,
+                nc = col + dc;
+            if (nr < 0 || nr >= bubbles.length) continue;
+            if (nc < 0 || nc >= getMaxCol(nr)) continue;
+            if (!bubbles[nr]?.[nc]) {
+                out.push({
+                    row: nr,
+                    col: nc,
+                    x: colToX(nc, nr),
+                    y: rowToY(nr),
+                });
+            }
         }
 
         return out;
-    },
-    isValid(row, col) {
-        return row >= ROWS || row < 0 || validColForRow(col, row);
     },
     getNearestPoint(line, point, out = null) {
         return Phaser.Geom.Line.GetNearestPoint(line, point, out);
@@ -72,18 +67,18 @@ const Helpers = {
         const { scene } = GameRegistry;
         const present = new Set();
         for (let r = 0; r < scene.bubbles.length; r++) {
-            for (let c = 0; c < (scene.bubbles[r]?.length || 0); c++) {
-                const b = scene.bubbles[r][c];
-                if (b) present.add(b.colorObj.name);
+            for (let c = 0; c < getGridCol(r); c++) {
+                const bubble = scene.bubbles[r]?.[c];
+                if (bubble) present.add(bubble.colorObj.name);
             }
         }
         const pool = present.size
-            ? COLORS.filter((c) => present.has(c.name))
+            ? COLORS.filter(({ name }) => present.has(name))
             : COLORS;
 
         return getRandom(pool);
     },
-    getBetween(x1, y1, x2, y2) {
+    getBetween4(x1, y1, x2, y2) {
         return Phaser.Math.Distance.Between(x1, y1, x2, y2);
     },
     getAimAngle(pointer) {
@@ -96,7 +91,7 @@ const Helpers = {
         return Math.atan2(d.y, d.x);
     },
     getPatterns(row) {
-        return row % 2 === 0
+        return isEven(row)
             ? [
                   [-1, -1],
                   [-1, 0],
@@ -115,33 +110,18 @@ const Helpers = {
               ];
     },
     getNeighbors(row, col) {
-        const { scene } = GameRegistry;
-        const offsets = getPatterns(row);
-        let res = [];
-
-        for (const [dr, dc] of offsets) {
-            const num = { row: row + dr, col: col + dc };
-
-            if (isValid(num.row, num.col)) continue;
-            res.push({
-                ...num,
-                bubble: scene.bubbles[num.row]?.[num.col] || null,
-            });
+        const { bubbles } = GameRegistry.scene;
+        const res = [];
+        for (const [dr, dc] of getPatterns(row)) {
+            const nr = row + dr,
+                nc = col + dc;
+            if (nr < 0 || nr >= bubbles.length) continue;
+            if (nc < 0 || nc >= getMaxCol(nr)) continue;
+            const bubble = bubbles[nr]?.[nc] ?? null;
+            res.push({ row: nr, col: nc, bubble });
         }
 
         return res;
-    },
-    updateShotsBadge() {
-        const { scene } = GameRegistry;
-        if (scene.shotsText) scene.shotsText.setText(String(scene.shotsLeft));
-    },
-    loadAssets(slug, files, isAudio = false) {
-        const { scene } = GameRegistry;
-        scene.load.setPath(`assets/${slug}/`);
-        setValues(files, ({ key, value }) => {
-            if (isAudio) scene.load.audio(key, value);
-            else scene.load.image(key, value);
-        });
     },
     getCenterX() {
         return WIDTH / 2;
@@ -151,23 +131,23 @@ const Helpers = {
     },
     getLevelPattern(level = 1) {
         const config = {
-            rows: 6,
+            rows: 8,
             obstacleChance: 0,
             pattern: () => true,
         };
 
         switch (true) {
-            // 🟢 Level 1–6: Small triangle (easy to aim)
-            case level <= 6:
+            // 🟢 Level 1–10: Small triangle (easy to aim)
+            case level <= 10:
                 config.rows = 8;
                 config.pattern = (r, c, maxCol) =>
                     c > r / 2 && c < maxCol - r / 2;
                 config.obstacleChance = 0;
                 break;
 
-            // 🟡 Level 7–12: Wider triangle or diamond (moderate)
-            case level <= 12:
-                config.rows = 16;
+            // 🟡 Level 11–20: Wider triangle or diamond (moderate)
+            case level <= 20:
+                config.rows = 7;
                 config.pattern = (r, c, maxCol) => {
                     const mid = Math.floor(maxCol / 2);
                     const dist = Math.abs(c - mid);
@@ -176,16 +156,16 @@ const Helpers = {
                 config.obstacleChance = 0.05;
                 break;
 
-            // 🔵 Level 12–18: Full rectangle (denser = harder)
-            case level <= 18:
-                config.rows = 8;
+            // 🔵 Level 21–30: Full rectangle (denser = harder)
+            case level <= 30:
+                config.rows = 7;
                 config.pattern = () => true;
                 config.obstacleChance = 0.15;
                 break;
 
-            // 🔴 Level 19+: Rectangle + Stones (hardest)
+            // 🔴 Level 31+: Rectangle + Stones (hardest)
             default:
-                config.rows = 12;
+                config.rows = 8;
                 config.pattern = () => Math.random() > 0.2;
                 config.obstacleChance = 0.3;
                 break;
@@ -193,35 +173,17 @@ const Helpers = {
 
         return config;
     },
-    hideUIAfterBonus() {
-        const { scene } = GameRegistry;
-        scene.tweens.add({
-            targets: [
-                scene.nextBubble,
-                scene.swapIcon,
-                scene.currentRing,
-                scene.currentBubble,
-                scene.shooter,
-                scene.shotsBadge,
-                scene.shotsText,
-            ],
-            scale: 0,
-            alpha: 0,
-            duration: 600,
-            ease: "Back.easeIn",
-            onComplete: () => {
-                scene.currentBubble.destroy();
-                scene.nextBubble.destroy();
-                scene.swapIcon.destroy();
-                scene.currentRing.destroy();
-                scene.shooter.destroy();
-                scene.shotsBadge.destroy();
-                scene.shotsText.destroy();
-            },
-        });
-    },
-    getMinMax(min, max) {
+    getBetween2(min, max) {
         return Phaser.Math.Between(min, max);
+    },
+    getMaxCol(row) {
+        return isEven(row) ? COLS : COLS - 1;
+    },
+    getOffsetX(row) {
+        return isEven(row) ? 0 : H_SPACING / 2;
+    },
+    getGlobalX() {
+        return (WIDTH - COLS * H_SPACING) / 2;
     },
 };
 
@@ -230,20 +192,19 @@ export const {
     getRandom,
     getGridCol,
     getMoveLeft,
-    getEmptyNeighborPositions,
+    getEmptyNeighbors,
     getNearestPoint,
     getRandomColor,
-    getBetween,
+    getBetween4,
     getAimAngle,
     getClamp,
     getPatterns,
     getNeighbors,
-    updateShotsBadge,
-    loadAssets,
     getCenterX,
     getCenterY,
     getLevelPattern,
-    hideUIAfterBonus,
-    getMinMax,
-    isValid,
+    getBetween2,
+    getMaxCol,
+    getOffsetX,
+    getGlobalX,
 } = Helpers;

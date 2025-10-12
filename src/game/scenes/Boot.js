@@ -1,6 +1,6 @@
 import { setValues } from "../../hooks/func";
 import { COLORS, GameRegistry } from "../consts";
-import { loadAssets } from "../utils/helper";
+import { loadAssets } from "../utils/state";
 
 class GameBoot extends Phaser.Scene {
     constructor() {

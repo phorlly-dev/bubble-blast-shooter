@@ -1,6 +1,6 @@
 import { setValues } from "../../hooks/func";
 import { emitEvent, emitEvents } from "../../hooks/remote";
-import { COLORS, GameRegistry, HEIGHT, RADIUS, WIDTH } from "../consts";
+import { COLORS, GameRegistry, H_SPACING, HEIGHT, RADIUS } from "../consts";
 import MyImage from "../objects/MyImage";
 import { snapToCeiling, traceBubblePath } from "../utils/controller";
 import { getCenterX, getCenterY, getMoveLeft } from "../utils/helper";
@@ -12,13 +12,8 @@ import {
     makeSwapIcon,
     makeWalls,
 } from "../utils/object";
-import {
-    handleTrueHit,
-    setupInput,
-    shakeBubbles,
-    spawnWaveEffect,
-} from "../utils/payload";
-import { hSpacing, missedShot } from "../utils/state";
+import { handleTrueHit, setupInput, spawnWaveEffect } from "../utils/payload";
+import { missedShot, stopJustBefore } from "../utils/state";
 
 class GameEngine extends Phaser.Scene {
     constructor() {
@@ -56,10 +51,10 @@ class GameEngine extends Phaser.Scene {
     init(data) {
         GameRegistry.scene = this;
         if (data.spawn_wave) spawnWaveEffect();
-        this.level = data.level || 1;
-        this.score = data.score || 0;
-        this.gameOver = data.game_over || false;
-        this.isShooting = data.is_shooting || false;
+        this.level = data?.level ?? 1;
+        this.score = data?.score ?? 0;
+        this.gameOver = data?.game_over ?? false;
+        this.isShooting = data?.is_shooting ?? false;
         this.shotsLeft = getMoveLeft(this.level);
 
         // clear old events
@@ -72,12 +67,13 @@ class GameEngine extends Phaser.Scene {
         bg.setAlpha(0.6);
 
         // world bounds
-        makeWalls(this);
+        makeWalls();
 
         this.aimLine = this.add.graphics();
         this.bubbleGroup = this.physics.add.staticGroup();
 
         createBubbleGrid();
+        // debugGrid();
         setupInput();
         makeCurrentBall();
         makeSwapIcon();
@@ -96,7 +92,7 @@ class GameEngine extends Phaser.Scene {
 
         if (this.isShooting && this.currentBubble && !this.isSnapping) {
             const shot = this.currentBubble;
-            const dt = Math.min(delta / 888, 0.016);
+            const dt = Math.min(delta / 888, 0.8);
             const next = { x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
 
             // Bounce
@@ -109,31 +105,26 @@ class GameEngine extends Phaser.Scene {
             }
 
             // Continuous trace
-            const hit = traceBubblePath(shot.x, shot.y, next.x, next.y).closest;
+            const hit = traceBubblePath(shot.x, shot.y, next.x, next.y);
             if (hit) {
-                const d = { x: hit.x - shot.x, y: hit.y - shot.y };
-                const dist = Math.sqrt(d.x * d.x + d.y * d.y);
-                const stopDist = Math.max(0, dist - RADIUS);
-
-                shot.x += (d.x / dist) * stopDist;
-                shot.y += (d.y / dist) * stopDist;
+                const { x, y } = stopJustBefore(shot, hit, RADIUS * 1.03);
+                shot.setPosition(x, y);
 
                 handleTrueHit(shot, hit);
-                shakeBubbles();
                 return;
             }
 
             // No collision → move normally
             shot.x = next.x;
             shot.y = next.y;
-
             // Ceiling / out of bounds
             if (shot.y <= this.wallTop + RADIUS) {
                 snapToCeiling(shot);
+
                 return;
             }
 
-            if (shot.y > HEIGHT + hSpacing()) {
+            if (shot.y > HEIGHT + H_SPACING) {
                 missedShot();
                 return;
             }

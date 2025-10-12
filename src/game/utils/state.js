@@ -2,15 +2,22 @@ import { setValues } from "../../hooks/func";
 import { emitEvent } from "../../hooks/remote";
 import {
     COLORS,
-    COLS,
     GameRegistry,
-    OFFSET_X,
+    H_SPACING,
     OFFSET_Y,
-    RADIUS,
+    V_SPACING,
     WIDTH,
 } from "../consts";
 import MyText from "../objects/MyText";
-import { getCenterX, getCenterY, getMinMax, getNeighbors } from "./helper";
+import {
+    getCenterX,
+    getCenterY,
+    getBetween2,
+    getNeighbors,
+    getMaxCol,
+    getOffsetX,
+    getGlobalX,
+} from "./helper";
 import { afterShot } from "./payload";
 
 const States = {
@@ -22,28 +29,15 @@ const States = {
         }
         afterShot();
     },
-    hSpacing() {
-        return RADIUS * 2;
-    },
-    vPitch() {
-        return Math.round(Math.sqrt(3) * RADIUS);
-    },
     rowToY(row) {
-        return OFFSET_Y + row * vPitch();
+        return OFFSET_Y + row * V_SPACING;
     },
     colToX(col, row) {
-        const offset = row % 2 === 0 ? 0 : hSpacing() / 2;
-
-        return OFFSET_X + col * hSpacing() + offset;
+        return getGlobalX() + getOffsetX(row) + col * H_SPACING;
     },
-    validColForRow(col, row) {
-        const maxCol = row % 2 === 0 ? COLS : COLS - 1;
-
-        return col < 0 || col >= maxCol;
-    },
-    textPopup(b, scoreGain) {
+    textPopup(bubble, score) {
         const { scene } = GameRegistry;
-        const popup = new MyText(scene, b.x, b.y, `+${scoreGain}`, {
+        const popup = new MyText(scene, bubble.x, bubble.y, `+${score}`, {
             fontSize: "16px",
             fontFamily: "Arial",
             color: "#ffeb3b",
@@ -62,13 +56,13 @@ const States = {
 
         // bubble pop animation
         scene.tweens.add({
-            targets: b,
+            targets: bubble,
             alpha: 0,
             scale: 1.6,
             rotation: Math.random() * 0.5,
             duration: 280,
             ease: "Cubic.easeIn",
-            onComplete: () => b.destroy(),
+            onComplete: () => bubble.destroy(),
         });
     },
     markConnected(bubble, connected) {
@@ -82,10 +76,9 @@ const States = {
             connected.add(key);
 
             // ✅ Use your existing, correct getNeighbors()
-            const neighbors = getNeighbors(row, col);
-            for (const n of neighbors) {
+            for (const n of getNeighbors(row, col)) {
                 if (n.bubble && !connected.has(`${n.row},${n.col}`)) {
-                    stack.push({ ...n });
+                    stack.push({ row: n.row, col: n.col });
                 }
             }
         }
@@ -148,24 +141,13 @@ const States = {
         scene.cameras.main.flash(400, 255, 255, 255);
 
         // Big bubble burst animation
-        const bubbles = scene.bubbleGroup.getChildren();
-        setValues(bubbles, (b, i) => {
-            scene.tweens.add({
-                targets: b,
-                scale: 1.5,
-                alpha: 0,
-                duration: getMinMax(300, 600),
-                delay: i * 20,
-                ease: "Back.easeIn",
-                onComplete: () => b.destroy(),
-            });
-        });
+        clearScreen();
         levelCompleted(scene.level);
 
         // Restart game after short delay
         scene.time.delayedCall(1200, () => {
-            scene.level += 1;
-            scene.total += scene.score;
+            scene.level++;
+            scene.total = scene.score;
             emitEvent("level", scene.level);
             scene.scene.restart({
                 level: scene.level,
@@ -176,12 +158,123 @@ const States = {
             });
         });
     },
+    clearScreen() {
+        const { scene } = GameRegistry;
+        const bubbles = scene.bubbleGroup.getChildren();
+        setValues(bubbles, (val, idx) => {
+            scene.tweens.add({
+                targets: val,
+                scale: 1.5,
+                alpha: 0,
+                duration: getBetween2(300, 600),
+                delay: idx * 20,
+                ease: "Back.easeIn",
+                onComplete: () => val.destroy(),
+            });
+        });
+    },
+    stopJustBefore(shot, hit, back = 2) {
+        const dx = hit.x - shot.x;
+        const dy = hit.y - shot.y;
+        const dist = Math.hypot(dx, dy) || 1;
+
+        // distance from shot center to where it should stop = (2R - tiny_epsilon)
+        // const back = Math.max(0, dist - (RADIUS * 2 - 0.5));
+
+        return {
+            x: shot.x + (dx * back) / dist,
+            y: shot.y + (dy * back) / dist,
+        };
+    },
+    debugGrid() {
+        const { scene } = GameRegistry;
+        for (let r = 0; r < scene.bubbles.length; r++) {
+            const maxCol = getMaxCol(r);
+            for (let c = 0; c < maxCol; c++) {
+                const x = colToX(c, r);
+                const y = rowToY(r);
+                scene.add.circle(x, y, 1, 0x00ff00);
+            }
+        }
+    },
+    hideUIAfterBonus() {
+        const { scene } = GameRegistry;
+
+        // Only keep live objects
+        const targets = [
+            scene.nextBubble,
+            scene.swapIcon,
+            scene.currentRing,
+            scene.currentBubble,
+            scene.shooter,
+            scene.shotsBadge,
+            scene.shotsText,
+        ].filter((o) => o && !o.destroyed && !o._destroyed);
+
+        // If nothing to tween, just finish
+        if (!targets.length) {
+            cleanupUI(scene);
+            return;
+        }
+
+        // Stop any previous tweens on these objects
+        targets.forEach((o) => scene.tweens.killTweensOf(o));
+
+        scene.tweens.add({
+            targets,
+            scale: 0,
+            alpha: 0,
+            duration: 600,
+            ease: "Back.easeIn",
+            onComplete: () => cleanupUI(scene),
+        });
+    },
+    updateShotsBadge() {
+        const { scene } = GameRegistry;
+        if (scene.shotsText) scene.shotsText.setText(String(scene.shotsLeft));
+    },
+    loadAssets(slug, files, isAudio = false) {
+        const { scene } = GameRegistry;
+        scene.load.setPath(`assets/${slug}/`);
+        setValues(files, ({ key, value }) => {
+            if (isAudio) scene.load.audio(key, value);
+            else scene.load.image(key, value);
+        });
+    },
+    worldToGrid(x, y) {
+        const { bubbles } = GameRegistry.scene;
+        let row = Math.round((y - OFFSET_Y) / V_SPACING);
+        row = Math.max(0, Math.min(row, bubbles.length - 1)); // clamp
+
+        const base = getGlobalX() + getOffsetX(row);
+        let col = Math.round((x - base) / H_SPACING);
+        col = Math.max(0, Math.min(col, getMaxCol(row) - 1)); // clamp
+
+        return { row, col };
+    },
+    isEven(val) {
+        return Phaser.Math.IsEven(val);
+    },
+    cleanupUI(scene) {
+        // Helper to destroy-and-null if it exists
+        const kill = (key) => {
+            const o = scene[key];
+            if (o && o.destroy && !o.destroyed && !o._destroyed) o.destroy();
+            scene[key] = null;
+        };
+
+        kill("currentBubble");
+        kill("nextBubble");
+        kill("swapIcon");
+        kill("currentRing");
+        kill("shooter");
+        kill("shotsBadge");
+        kill("shotsText");
+    },
 };
 
 export const {
     missedShot,
-    hSpacing,
-    vPitch,
     rowToY,
     colToX,
     validColForRow,
@@ -189,4 +282,14 @@ export const {
     markConnected,
     levelCompleted,
     endWinSequence,
+    clearScreen,
+    stopJustBefore,
+    debugGrid,
+    hideUIAfterBonus,
+    updateShotsBadge,
+    loadAssets,
+    isValid,
+    worldToGrid,
+    isEven,
+    cleanupUI,
 } = States;
