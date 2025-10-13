@@ -17,6 +17,7 @@ import {
     getMaxCol,
     getOffsetX,
     getGlobalX,
+    getKey,
 } from "./helper";
 import { afterShot } from "./payload";
 
@@ -65,23 +66,39 @@ const States = {
             onComplete: () => bubble.destroy(),
         });
     },
-    markConnected(bubble, connected) {
-        const stack = [{ row: bubble.row, col: bubble.col }];
+    markConnected(scene) {
+        const connected = new Set();
+        const queued = new Set(); // to avoid double-pushing
+        const stack = [{ row: 0, col: 0 }];
 
+        // 1) seed with all bubbles touching the ceiling
+        for (let col = 0; col < getMaxCol(0); col++) {
+            const top = scene.bubbles[0]?.[col];
+            if (!top) continue;
+
+            stack.push({ row: 0, col });
+            queued.add(getKey(0, col)); // NOT connected yet
+        }
+
+        // 2) flood-fill through neighbors
         while (stack.length) {
-            const { row, col } = stack.pop();
-            const key = `${row},${col}`;
+            const { row: r, col: c } = stack.pop();
+            const key = getKey(r, c);
             if (connected.has(key)) continue;
 
-            connected.add(key);
+            connected.add(key); // mark now
 
-            // ✅ Use your existing, correct getNeighbors()
-            for (const n of getNeighbors(row, col)) {
-                if (n.bubble && !connected.has(`${n.row},${n.col}`)) {
-                    stack.push({ row: n.row, col: n.col });
-                }
+            for (const { bubble, row, col } of getNeighbors(r, c)) {
+                if (!bubble) continue;
+                const nk = getKey(row, col);
+                if (connected.has(nk) || queued.has(nk)) continue;
+
+                stack.push({ row, col });
+                queued.add(nk);
             }
         }
+
+        return connected;
     },
     levelCompleted(level) {
         const { scene } = GameRegistry;
@@ -277,7 +294,6 @@ export const {
     missedShot,
     rowToY,
     colToX,
-    validColForRow,
     textPopup,
     markConnected,
     levelCompleted,
@@ -288,7 +304,6 @@ export const {
     hideUIAfterBonus,
     updateShotsBadge,
     loadAssets,
-    isValid,
     worldToGrid,
     isEven,
     cleanupUI,

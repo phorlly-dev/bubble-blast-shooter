@@ -22,12 +22,12 @@ const Helpers = {
         return Phaser.Math.Clamp(val, min, max);
     },
     getMoveLeft(level = 1) {
-        // Base range grows slightly by level
-        const minBase = 12 + Math.min(level * 2, 24);
-        const maxBase = 24 + Math.min(level * 3, 32);
+        // // Base range grows slightly by level
+        // const minBase = 12 + Math.min(level * 2, 24);
+        // const maxBase = 24 + Math.min(level * 3, 32);
 
         // Pick random base moves within that range
-        const base = getBetween2(minBase, maxBase);
+        const base = getBetween2(12, 24);
 
         // Soft difficulty balancing
         let bonus = 0;
@@ -35,7 +35,7 @@ const Helpers = {
         else bonus = getBetween2(6, 9);
 
         // Final calculation
-        const moves = Math.max(32, Math.ceil(base + bonus));
+        const moves = Math.max(24, Math.ceil(base + bonus));
 
         return moves;
     },
@@ -64,26 +64,40 @@ const Helpers = {
         return Phaser.Geom.Line.GetNearestPoint(line, point, out);
     },
     getRandomColor() {
-        const { scene } = GameRegistry;
-        const present = new Set();
-        for (let r = 0; r < scene.bubbles.length; r++) {
-            for (let c = 0; c < getGridCol(r); c++) {
-                const bubble = scene.bubbles[r]?.[c];
-                if (bubble) present.add(bubble.colorObj.name);
+        const { bubbles } = GameRegistry.scene;
+
+        const counts = new Map();
+        for (let r = 0; r < bubbles.length; r++) {
+            const row = bubbles[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                const b = row[c];
+                if (!b || b.isStone) continue;
+                counts.set(
+                    b.colorObj.name,
+                    (counts.get(b.colorObj.name) || 0) + 1
+                );
             }
         }
-        const pool = present.size
-            ? COLORS.filter(({ name }) => present.has(name))
-            : COLORS;
 
-        return getRandom(pool);
+        // if board empty, allow all colors
+        if (!counts.size) return getRandom(COLORS);
+
+        const bag = [];
+        for (const { name } of COLORS) {
+            const k = counts.get(name) || 0;
+            for (let i = 0; i < k; i++) bag.push(name); // weight by count
+        }
+
+        const colorName = bag[(Math.random() * bag.length) | 0];
+        return COLORS.find(({ name }) => name === colorName);
     },
     getBetween4(x1, y1, x2, y2) {
         return Phaser.Math.Distance.Between(x1, y1, x2, y2);
     },
     getAimAngle(pointer) {
-        const { scene } = GameRegistry;
-        const { x, y } = scene.currentBubble;
+        const { currentBubble } = GameRegistry.scene;
+        const { x, y } = currentBubble;
         let d = { x: pointer.x - x, y: pointer.y - y };
 
         if (d.y >= -4) d.y = -Math.max(8, Math.abs(d.y) + 1);
@@ -111,6 +125,7 @@ const Helpers = {
     },
     getNeighbors(row, col) {
         const { bubbles } = GameRegistry.scene;
+
         const res = [];
         for (const [dr, dc] of getPatterns(row)) {
             const nr = row + dr,
@@ -185,6 +200,9 @@ const Helpers = {
     getGlobalX() {
         return (WIDTH - COLS * H_SPACING) / 2;
     },
+    getKey(row, col) {
+        return `${row},${col}`;
+    },
 };
 
 export const {
@@ -207,4 +225,5 @@ export const {
     getMaxCol,
     getOffsetX,
     getGlobalX,
+    getKey,
 } = Helpers;

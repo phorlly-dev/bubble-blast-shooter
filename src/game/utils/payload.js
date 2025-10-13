@@ -1,6 +1,6 @@
 import { setValues } from "../../hooks/func";
 import { emitEvent, onEvent } from "../../hooks/remote";
-import { GameRegistry, HEIGHT, RADIUS, WIDTH } from "../consts";
+import { GameRegistry, H_SPACING, HEIGHT, RADIUS, WIDTH } from "../consts";
 import MyText from "../objects/MyText";
 import {
     checkGameOver,
@@ -20,6 +20,7 @@ import {
     getNeighbors,
     getEmptyNeighbors,
     getMaxCol,
+    getKey,
 } from "./helper";
 import { makeNextBall } from "./object";
 import {
@@ -80,19 +81,19 @@ const Payloads = {
 
         while (stack.length) {
             const cur = stack.pop();
-            const key = `${cur.row},${cur.col}`;
+            const key = getKey(cur.row, cur.col);
 
             if (seen.has(key)) continue;
             seen.add(key);
             out.push(cur);
 
-            for (const n of getNeighbors(cur.row, cur.col)) {
+            for (const { bubble, row, col } of getNeighbors(cur.row, cur.col)) {
                 if (
-                    n.bubble &&
-                    n.bubble.colorObj.name === color &&
-                    !seen.has(`${n.row},${n.col}`)
+                    bubble &&
+                    bubble.colorObj.name === color &&
+                    !seen.has(getKey(row, col))
                 )
-                    stack.push(n.bubble);
+                    stack.push(bubble);
             }
         }
 
@@ -244,20 +245,19 @@ const Payloads = {
 
         const combo = Math.max(1, matches.length - 2); // 3-match = 1x, 4-match = 2x, etc.
         setValues(matches, (b) => {
-            const colorScore = Math.floor(b.colorObj.score / 2) * combo;
+            const colorScore = Math.floor(b.colorObj.score / 1.69) * combo;
+            scene.bubbles[b.row][b.col] = null;
+            scene.bubbleGroup.remove(b);
+            textPopup(b, colorScore);
+            scene.score += colorScore;
             scene.tweens.add({
                 targets: b,
                 alpha: 0,
                 scale: 0.2,
-                duration: 150,
+                duration: 160,
                 ease: "Power2",
                 onComplete: () => b.destroy(),
             });
-
-            textPopup(b, colorScore);
-            scene.score += colorScore;
-            scene.bubbles[b.row][b.col] = null;
-            scene.bubbleGroup.remove(b);
         });
 
         emitEvent("score", scene.score);
@@ -437,6 +437,28 @@ const Payloads = {
             bubbles[row] = a;
         }
     },
+    dropBubble(b) {
+        const { scene } = GameRegistry;
+        // fully detach first
+        scene.bubbles[b.row][b.col] = null;
+        scene.bubbleGroup.remove(b);
+
+        // no more collisions while falling
+        if (b.body) {
+            scene.physics.world.remove(b.body); // or: b.body.enable = false;
+            b.body = null;
+        }
+
+        b.setDepth(9999); // render above the grid while falling
+        scene.tweens.add({
+            targets: b,
+            y: HEIGHT + H_SPACING,
+            alpha: 0,
+            duration: 360,
+            ease: "Cubic.easeIn",
+            onComplete: () => b.destroy(),
+        });
+    },
 };
 
 export const {
@@ -454,4 +476,5 @@ export const {
     chooseClosestEmptyToHit,
     findNearestGlobalEmpty,
     ensureRow,
+    dropBubble,
 } = Payloads;

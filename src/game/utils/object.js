@@ -14,6 +14,7 @@ import {
     getCenterX,
     getLevelPattern,
     getMaxCol,
+    getOffsetX,
     getRandom,
     getRandomColor,
 } from "./helper";
@@ -22,7 +23,8 @@ import { colToX, rowToY } from "./state";
 const Objects = {
     makeWalls() {
         const { scene } = GameRegistry;
-        scene.wallLeft = RADIUS;
+
+        scene.wallLeft = RADIUS + getOffsetX(0);
         scene.wallRight = WIDTH - RADIUS;
         scene.wallTop = OFFSET_Y;
         scene.physics.world.setBounds(
@@ -72,7 +74,7 @@ const Objects = {
             HEIGHT - H_SPACING,
             "swap_icon"
         );
-        scene.swapIcon.setScale(0.16).setAlpha(0.6);
+        scene.swapIcon.setScale(0.16).setAlpha(0.3);
         scene.tweens.add({
             targets: scene.swapIcon,
             angle: 360,

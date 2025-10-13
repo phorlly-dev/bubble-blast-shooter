@@ -11,11 +11,13 @@ import {
     getRandomColor,
     getMaxCol,
     getLinear,
+    getKey,
 } from "./helper";
 import { createBubble, makeNextBall } from "./object";
 import {
     afterShot,
     chooseClosestEmptyToHit,
+    dropBubble,
     endScreen,
     ensureRow,
     findMatches,
@@ -27,9 +29,9 @@ import { colToX, isEven, markConnected, rowToY, worldToGrid } from "./state";
 
 const Controllers = {
     traceBubblePath(x1, y1, x2, y2) {
-        const { scene } = GameRegistry;
+        const { bubbles } = GameRegistry.scene;
 
-        const steps = Math.ceil(getBetween4(x1, y1, x2, y2) / (RADIUS * 0.6));
+        const steps = Math.ceil(getBetween4(x1, y1, x2, y2) / (RADIUS * 0.5));
         let closest = null,
             bestDist = Infinity;
 
@@ -38,9 +40,9 @@ const Controllers = {
             const px = getLinear([x1, x2], t);
             const py = getLinear([y1, y2], t);
 
-            for (let r = 0; r < scene.bubbles.length; r++) {
+            for (let r = 0; r < bubbles.length; r++) {
                 for (let c = 0; c < getMaxCol(r); c++) {
-                    const b = scene.bubbles[r][c];
+                    const b = bubbles[r][c];
                     if (!b) continue;
 
                     const d = getBetween4(px, py, b.x, b.y);
@@ -177,14 +179,19 @@ const Controllers = {
     },
     snapBubbleToGrid(bubble, row, col) {
         const { scene } = GameRegistry;
+        if (bubble.body) {
+            scene.physics.world.remove(bubble.body);
+            bubble.body = null;
+        }
 
         ensureRow(row);
         col = Math.max(0, Math.min(col, getMaxCol(row) - 1));
         if (scene.bubbles[row][col]) return false; // spot occupied, bail
 
-        bubble.setPosition(colToX(col, row), rowToY(row));
         bubble.row = row;
         bubble.col = col;
+        bubble.setPosition(colToX(col, row), rowToY(row));
+        scene.bubbles[row] ??= [];
         scene.bubbles[row][col] = bubble;
         scene.bubbleGroup.add(bubble);
 
@@ -194,13 +201,9 @@ const Controllers = {
     },
     removeFloatingBubbles() {
         const { scene } = GameRegistry;
-        const connected = new Set();
 
-        // Step 1: Mark all bubbles touching the ceiling
-        for (let col = 0; col < getMaxCol(0); col++) {
-            const top = scene.bubbles[0]?.[col];
-            if (top) markConnected(top, connected);
-        }
+        // // Step 1: Mark all bubbles touching the ceiling
+        const connected = markConnected(scene);
 
         // Step 2: Drop all bubbles not in the connected set
         let removed = 0;
@@ -209,20 +212,9 @@ const Controllers = {
                 const bubble = scene.bubbles[row]?.[col];
                 if (!bubble || bubble.isStone) continue;
 
-                if (!connected.has(`${row},${col}`)) {
-                    scene.bubbleGroup.remove(bubble);
-                    scene.bubbles[row][col] = null;
+                if (!connected.has(getKey(row, col))) {
                     removed++;
-
-                    // Drop animation
-                    scene.tweens.add({
-                        targets: bubble,
-                        y: bubble.y + getCenterY(),
-                        alpha: 0,
-                        duration: 600,
-                        ease: "Cubic.easeIn",
-                        onComplete: () => bubble.destroy(),
-                    });
+                    dropBubble(bubble);
                 }
             }
         }

@@ -92,7 +92,7 @@ class GameEngine extends Phaser.Scene {
 
         if (this.isShooting && this.currentBubble && !this.isSnapping) {
             const shot = this.currentBubble;
-            const dt = Math.min(delta / 888, 0.8);
+            const dt = Math.min(delta / 888, 0.016);
             const next = { x: shot.x + shot.vx * dt, y: shot.y + shot.vy * dt };
 
             // Bounce
@@ -120,7 +120,6 @@ class GameEngine extends Phaser.Scene {
             // Ceiling / out of bounds
             if (shot.y <= this.wallTop + RADIUS) {
                 snapToCeiling(shot);
-
                 return;
             }
 
