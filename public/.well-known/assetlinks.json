@@ -1,0 +1,12 @@
+[
+    {
+        "relation": ["delegate_permission/common.handle_all_urls"],
+        "target": {
+            "namespace": "android_app",
+            "package_name": "com.indnkt78.main_soe",
+            "sha256_cert_fingerprints": [
+                "F6:BB:55:D3:A7:0C:0B:2E:2A:C1:A8:AB:49:31:E2:C6:61:C8:BF:7A:DD:30:10:76:C1:71:CE:23:73:A0:EC:45"
+            ]
+        }
+    }
+]
